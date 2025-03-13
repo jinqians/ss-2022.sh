@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.0.1"
 SS_VERSION=""
 
 # 系统路径
@@ -874,6 +874,12 @@ Start_Menu() {
         clear
         check_root
         check_sys
+    echo -e "${CYAN}============================================${RESET}"
+    echo -e "${CYAN}          SS - 2022 管理脚本${RESET}"
+    echo -e "${CYAN}============================================${RESET}"
+    echo -e "${GREEN}作者: jinqian${RESET}"
+    echo -e "${GREEN}网站：https://jinqians.com${RESET}"
+    echo -e "${CYAN}============================================${RESET}"
         action=${1:-}
         echo && echo -e "  
 ==================================
