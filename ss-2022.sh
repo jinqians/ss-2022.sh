@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 SS_VERSION=""
 
 # 系统路径
@@ -144,25 +144,25 @@ Info="${Green_font_prefix}[信息]${Font_color_suffix}"
 Error="${Red_font_prefix}[错误]${Font_color_suffix}"
 Tip="${Yellow_font_prefix}[注意]${Font_color_suffix}"
 
-check_sys(){
-	if [[ -f /etc/redhat-release ]]; then
-		release="centos"
-	elif cat /etc/issue | grep -q -E -i "debian"; then
-		release="debian"
-	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
-		release="ubuntu"
-	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
-		release="centos"
-	elif cat /proc/version | grep -q -E -i "debian"; then
-		release="debian"
-	elif cat /proc/version | grep -q -E -i "ubuntu"; then
-		release="ubuntu"
-	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
-		release="centos"
+check_sys() {
+    if [[ -f /etc/redhat-release ]]; then
+        release="centos"
+    elif cat /etc/issue | grep -q -E -i "debian"; then
+        release="debian"
+    elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+        release="ubuntu"
+    elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+        release="centos"
+    elif cat /proc/version | grep -q -E -i "debian"; then
+        release="debian"
+    elif cat /proc/version | grep -q -E -i "ubuntu"; then
+        release="ubuntu"
+    elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+        release="centos"
     fi
 }
 
-check_installed_status(){
+check_installed_status() {
     if [[ ! -e ${BINARY_PATH} ]]; then
         echo -e "${Error} Shadowsocks Rust 没有安装，请检查！"
         return 1
@@ -170,7 +170,7 @@ check_installed_status(){
     return 0
 }
 
-check_status(){
+check_status() {
     if systemctl is-active ss-rust >/dev/null 2>&1; then
         status="running"
     else
@@ -178,50 +178,29 @@ check_status(){
     fi
 }
 
-check_new_ver(){
-	new_ver=$(wget -qO- https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases| jq -r '[.[] | select(.prerelease == false) | select(.draft == false) | .tag_name] | .[0]')
-	[[ -z ${new_ver} ]] && echo -e "${Error} Shadowsocks Rust 最新版本获取失败！" && exit 1
-	echo -e "${Info} 检测到 Shadowsocks Rust 最新版本为 [ ${new_ver} ]"
+check_new_ver() {
+    new_ver=$(wget -qO- https://api.github.com/repos/shadowsocks/shadowsocks-rust/releases| jq -r '[.[] | select(.prerelease == false) | select(.draft == false) | .tag_name] | .[0]')
+    [[ -z ${new_ver} ]] && echo -e "${Error} Shadowsocks Rust 最新版本获取失败！" && exit 1
+    echo -e "${Info} 检测到 Shadowsocks Rust 最新版本为 [ ${new_ver} ]"
 }
 
-check_ver_comparison(){
-	now_ver=$(cat ${VERSION_FILE})
-	if [[ "${now_ver}" != "${new_ver}" ]]; then
-		echo -e "${Info} 发现 Shadowsocks Rust 已有新版本 [ ${new_ver} ]，旧版本 [ ${now_ver} ]"
-		read -e -p "是否更新 ？ [Y/n]：" yn
-		[[ -z "${yn}" ]] && yn="y"
-		if [[ $yn == [Yy] ]]; then
-			check_status
-			# [[ "$status" == "running" ]] && systemctl stop ss-rust
-			\cp "${CONFIG_PATH}" "/tmp/config.json"
-			# rm -rf ${INSTALL_DIR}
-			download
-			mv -f "/tmp/config.json" "${CONFIG_PATH}"
-			Restart
-		fi
-	else
-		echo -e "${Info} 当前 Shadowsocks Rust 已是最新版本 [ ${new_ver} ] ！" && exit 1
-	fi
+# 检查版本并比较
+check_ver_comparison() {
+    if [[ ! -f "${VERSION_FILE}" ]]; then
+        echo -e "${Info} 未找到版本文件，可能是首次安装"
+        return 0
+    fi
+    
+    local now_ver=$(cat ${VERSION_FILE})
+    if [[ "${now_ver}" != "${new_ver}" ]]; then
+        echo -e "${Info} 发现 Shadowsocks Rust 新版本 [ ${new_ver} ]"
+        echo -e "${Info} 当前版本 [ ${now_ver} ]"
+        return 0
+    else
+        echo -e "${Info} 当前已是最新版本 [ ${new_ver} ]"
+        return 1
+    fi
 }
-
-# Download(){
-# 	if [[ ! -e "${INSTALL_DIR}" ]]; then
-# 		mkdir "${INSTALL_DIR}"
-# 	# else
-# 		# [[ -e "${BINARY_PATH}" ]] && rm -rf "${BINARY_PATH}"
-# 	fi
-# 	echo -e "${Info} 开始下载 Shadowsocks Rust ……"
-# 	wget --no-check-certificate -N "https://github.com/shadowsocks/shadowsocks-rust/releases/download/${new_ver}/shadowsocks-${new_ver}.${arch}-unknown-linux-gnu.tar.xz"
-# 	[[ ! -e "shadowsocks-${new_ver}.${arch}-unknown-linux-gnu.tar.xz" ]] && echo -e "${Error} Shadowsocks Rust 下载失败！" && exit 1
-# 	tar -xvf "shadowsocks-${new_ver}.${arch}-unknown-linux-gnu.tar.xz"
-# 	[[ ! -e "ssserver" ]] && echo -e "${Error} Shadowsocks Rust 压缩包解压失败！" && exit 1
-# 	rm -rf "shadowsocks-${new_ver}.${arch}-unknown-linux-gnu.tar.xz"
-# 	chmod +x ssserver
-# 	mv -f ssserver "${BINARY_PATH}"
-# 	rm sslocal ssmanager ssservice ssurl
-# 	echo "${new_ver}" > ${VERSION_FILE}
-#     echo -e "${Info} Shadowsocks Rust 主程序下载安装完毕！"
-# }
 
 # 下载 Shadowsocks Rust
 download_ss() {
@@ -836,31 +815,58 @@ Status() {
 
 # 更新脚本
 Update_Shell() {
-    echo -e "当前版本为 [ ${SCRIPT_VERSION} ]，开始检测最新版本..."
-    sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/ss-2022.sh"|grep 'SCRIPT_VERSION="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
-    [[ -z ${sh_new_ver} ]] && echo -e "${Error} 检测最新版本失败 !" && Start_Menu
+    echo -e "${Info} 当前脚本版本为 [ ${SCRIPT_VERSION} ]"
+    echo -e "${Info} 开始检测脚本更新..."
+    
+    # 下载最新版本进行版本对比
+    local temp_file="/tmp/ss-2022.sh"
+    if ! wget --no-check-certificate -O ${temp_file} "https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/ss-2022.sh"; then
+        echo -e "${Error} 下载最新脚本失败！"
+        rm -f ${temp_file}
+        return 1
+    fi
+    
+    # 检查下载的文件是否存在且有内容
+    if [[ ! -s ${temp_file} ]]; then
+        echo -e "${Error} 下载的脚本文件为空！"
+        rm -f ${temp_file}
+        return 1
+    fi
+    
+    # 获取最新版本号
+    sh_new_ver=$(grep 'SCRIPT_VERSION="' ${temp_file} | awk -F '"' '{print $2}')
+    if [[ -z ${sh_new_ver} ]]; then
+        echo -e "${Error} 获取最新版本号失败！"
+        rm -f ${temp_file}
+        return 1
+    fi
+    
+    # 比较版本号
     if [[ ${sh_new_ver} != ${SCRIPT_VERSION} ]]; then
-        echo -e "发现新版本[ ${sh_new_ver} ]，是否更新？[Y/n]"
-        read -p "(默认：y)：" yn
+        echo -e "${Info} 发现新版本 [ ${sh_new_ver} ]"
+        echo -e "${Info} 是否更新？[Y/n]"
+        read -p "(默认: y)：" yn
         [[ -z "${yn}" ]] && yn="y"
         if [[ ${yn} == [Yy] ]]; then
-            wget -O ss-2022.sh --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/ss-2022.sh && chmod +x ss-2022.sh
-            echo -e "脚本已更新为最新版本[ ${sh_new_ver} ]！"
-            echo -e "3s后执行新脚本"
-            sleep 3s
-            bash ss-2022.sh
+            # 备份当前脚本
+            cp "${SCRIPT_PATH}/${SCRIPT_NAME}" "${SCRIPT_PATH}/${SCRIPT_NAME}.bak.${SCRIPT_VERSION}"
+            echo -e "${Info} 已备份当前版本到 ${SCRIPT_NAME}.bak.${SCRIPT_VERSION}"
+            
+            # 更新脚本
+            mv -f ${temp_file} "${SCRIPT_PATH}/${SCRIPT_NAME}"
+            chmod +x "${SCRIPT_PATH}/${SCRIPT_NAME}"
+            echo -e "${Success} 脚本已更新至 [ ${sh_new_ver} ]"
+            echo -e "${Info} 2秒后执行新脚本..."
+            sleep 2s
+            exec "${SCRIPT_PATH}/${SCRIPT_NAME}"
         else
-            echo && echo "	已取消..." && echo
-            sleep 3s
-            Start_Menu
+            echo -e "${Info} 已取消更新..."
+            rm -f ${temp_file}
         fi
     else
-        echo -e "当前已是最新版本[ ${sh_new_ver} ] ！"
-        sleep 3s
-        Start_Menu
+        echo -e "${Info} 当前已是最新版本 [ ${sh_new_ver} ]"
+        rm -f ${temp_file}
     fi
-    sleep 3s
-    bash ss-2022.sh
 }
 
 # 返回主菜单
@@ -874,17 +880,17 @@ Start_Menu() {
         clear
         check_root
         check_sys
-    echo -e "${CYAN}============================================${RESET}"
-    echo -e "${CYAN}          SS - 2022 管理脚本${RESET}"
-    echo -e "${CYAN}============================================${RESET}"
+        action=${1:-}
+    echo -e "${GREEN}============================================${RESET}"
+    echo -e "${GREEN}          Snell 管理脚本 v${current_version}${RESET}"
+    echo -e "${GREEN}============================================${RESET}"
     echo -e "${GREEN}作者: jinqian${RESET}"
     echo -e "${GREEN}网站：https://jinqians.com${RESET}"
     echo -e "${CYAN}============================================${RESET}"
-        action=${1:-}
         echo && echo -e "  
-==================================
+============================================
 Shadowsocks Rust 管理脚本 ${Green_font_prefix}[v${SCRIPT_VERSION}]${Font_color_suffix}
-==================================
+============================================
  ${Green_font_prefix}0.${Font_color_suffix} 更新脚本
 ——————————————————————————————————
  ${Green_font_prefix}1.${Font_color_suffix} 安装 Shadowsocks Rust
