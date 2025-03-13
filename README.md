@@ -2,7 +2,7 @@
 ### 安装脚本
 
 ```bash
-wget -N --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/ss-2022.sh && chmod +x ss-rust-installer.sh &&./ss-2022.sh
+wget -N --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/ss-2022.sh && chmod +x ss-2022.sh &&./ss-2022.sh
 ```
 
 # Shadowsocks Rust + ShadowTLS 安装管理脚本
