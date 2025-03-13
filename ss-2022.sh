@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.3.0"
 SS_VERSION=""
 
 # 系统路径
@@ -912,11 +912,8 @@ Start_Menu() {
     echo -e "${GREEN}============================================${RESET}"
     echo -e "${GREEN}作者: jinqian${RESET}"
     echo -e "${GREEN}网站：https://jinqians.com${RESET}"
-    echo -e "${CYAN}============================================${RESET}"
+    echo -e "${GREEN}============================================${RESET}"
         echo && echo -e "  
-============================================
-Shadowsocks Rust 管理脚本 ${Green_font_prefix}[v${SCRIPT_VERSION}]${Font_color_suffix}
-============================================
  ${Green_font_prefix}0.${Font_color_suffix} 更新脚本
 ——————————————————————————————————
  ${Green_font_prefix}1.${Font_color_suffix} 安装 Shadowsocks Rust
