@@ -882,7 +882,7 @@ Start_Menu() {
         check_sys
         action=${1:-}
     echo -e "${GREEN}============================================${RESET}"
-    echo -e "${GREEN}          Snell 管理脚本 v${current_version}${RESET}"
+    echo -e "${GREEN}          SS - 2022 管理脚本 ${RESET}"
     echo -e "${GREEN}============================================${RESET}"
     echo -e "${GREEN}作者: jinqian${RESET}"
     echo -e "${GREEN}网站：https://jinqians.com${RESET}"
