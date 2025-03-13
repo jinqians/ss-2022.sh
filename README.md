@@ -1,4 +1,12 @@
-# Shadowsocks Rust 管理脚本
+# 食用说明
+## 安装方法
+
+```bash
+wget --no-check-certificate -O ss-2022.sh https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/ss-2022.sh
+chmod +x ss-2022.sh
+./ss-2022.sh
+```
+## Shadowsocks Rust 管理脚本
 
 这是一个用于管理 Shadowsocks Rust 服务器的 Shell 脚本，提供了简单的命令行界面来安装、配置和管理 Shadowsocks Rust。本脚本仅使用官方源进行安装，确保最新版本和安全性。
 
@@ -38,14 +46,6 @@
 - 支持的操作系统：CentOS、Debian、Ubuntu
 - 需要 ROOT 权限
 - 支持的架构：x86_64、aarch64、armv7
-
-## 安装方法
-
-```bash
-wget --no-check-certificate -O ss-2022.sh https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/ss-2022.sh
-chmod +x ss-2022.sh
-./ss-2022.sh
-```
 
 ## 使用说明
 
