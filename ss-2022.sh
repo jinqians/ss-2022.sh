@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.2.0"
 SS_VERSION=""
 
 # 系统路径
@@ -869,6 +869,32 @@ Update_Shell() {
     fi
 }
 
+# 安装 ShadowTLS
+install_shadowtls() {
+    echo -e "${Info} 开始下载 ShadowTLS 安装脚本..."
+    
+    # 下载 ShadowTLS 脚本
+    wget -N --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/shadowtls.sh
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${Error} ShadowTLS 脚本下载失败！"
+        return 1
+    fi
+    
+    # 添加执行权限
+    chmod +x shadowtls.sh
+    
+    echo -e "${Info} 开始安装 ShadowTLS..."
+    
+    # 执行 ShadowTLS 安装脚本
+    bash shadowtls.sh
+    
+    # 清理下载的脚本
+    rm -f shadowtls.sh
+    
+    Before_Start_Menu
+}
+
 # 返回主菜单
 Before_Start_Menu() {
     echo && echo -n -e "${Yellow_font_prefix}* 按回车返回主菜单 *${Font_color_suffix}" && read temp
@@ -905,7 +931,9 @@ Shadowsocks Rust 管理脚本 ${Green_font_prefix}[v${SCRIPT_VERSION}]${Font_col
  ${Green_font_prefix}8.${Font_color_suffix} 查看 配置信息
  ${Green_font_prefix}9.${Font_color_suffix} 查看 运行状态
 ——————————————————————————————————
- ${Green_font_prefix}10.${Font_color_suffix} 退出脚本
+ ${Green_font_prefix}10.${Font_color_suffix} 安装 ShadowTLS
+ ${Green_font_prefix}11.${Font_color_suffix} 退出脚本
+——————————————————————————————————
 ==================================" && echo
         if [[ -e ${BINARY_PATH} ]]; then
             check_status
@@ -956,6 +984,9 @@ Shadowsocks Rust 管理脚本 ${Green_font_prefix}[v${SCRIPT_VERSION}]${Font_col
                 Status
                 ;;
             10)
+                install_shadowtls
+                ;;
+            11)
                 echo -e "${Info} 退出脚本..."
                 exit 0
                 ;;
