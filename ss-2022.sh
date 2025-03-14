@@ -884,15 +884,15 @@ View() {
     local stls_password=""
     local stls_sni=""
     
-    if [ -f "/etc/systemd/system/shadowtls.service" ]; then
+    if [ -f "/etc/systemd/system/shadowtls-ss.service" ]; then
         has_shadowtls=true
         echo -e "\n${Yellow_font_prefix}ShadowTLS 配置：${Font_color_suffix}"
         echo -e "——————————————————————————————————"
         
         # 从 shadowtls.service 文件中获取配置信息
-        stls_listen_port=$(grep -oP '(?<=--listen ::0:)\d+' /etc/systemd/system/shadowtls.service)
-        stls_password=$(grep -oP '(?<=--password )\S+' /etc/systemd/system/shadowtls.service)
-        stls_sni=$(grep -oP '(?<=--tls )\S+' /etc/systemd/system/shadowtls.service)
+        stls_listen_port=$(grep -oP '(?<=--listen ::0:)\d+' /etc/systemd/system/shadowtls-ss.service)
+        stls_password=$(grep -oP '(?<=--password )\S+' /etc/systemd/system/shadowtls-ss.service)
+        stls_sni=$(grep -oP '(?<=--tls )\S+' /etc/systemd/system/shadowtls-ss.service)
 
         echo -e " 监听端口：${Green_font_prefix}${stls_listen_port}${Font_color_suffix}"
         echo -e " 密码：${Green_font_prefix}${stls_password}${Font_color_suffix}"
