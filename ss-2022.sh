@@ -636,6 +636,14 @@ Install() {
     
     echo -e "${Info} 开始安装系统服务..."
     install_service
+
+    echo -e "${Info} 创建命令快捷方式..."
+    curl -L -s ss.jinqians.com -o "/usr/local/bin/ss-2022.sh"
+    chmod +x "/usr/local/bin/ss-2022.sh"
+    if [ -f "/usr/local/bin/ssrust" ]; then
+        rm -f "/usr/local/bin/ssrust"
+    fi
+    ln -s "/usr/local/bin/ss-2022.sh" "/usr/local/bin/ssrust"
     
     echo -e "${Info} 所有步骤安装完毕，开始启动服务..."
     start_service
@@ -643,6 +651,7 @@ Install() {
     if [[ "$?" == "0" ]]; then
         echo -e "${Success} Shadowsocks Rust 安装并启动成功！"
         View
+        echo -e "${Info} 您可以使用 ${Green_font_prefix}ssrust${Font_color_suffix} 命令进行管理"
         Before_Start_Menu
     else
         echo -e "${Error} Shadowsocks Rust 启动失败，请检查日志！"
@@ -723,6 +732,8 @@ Uninstall() {
         systemctl disable ss-rust
         rm -rf "${INSTALL_DIR}"
         rm -rf "${BINARY_PATH}"
+        rm -f "/usr/local/bin/ssrust"
+        rm -f "/usr/local/bin/ss-2022.sh"
         echo && echo "Shadowsocks Rust 卸载完成！" && echo
     else
         echo && echo "卸载已取消..." && echo
