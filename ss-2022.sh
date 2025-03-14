@@ -791,16 +791,92 @@ View() {
     echo -e " TFO ：${Green_font_prefix}${SS_TFO}${Font_color_suffix}"
     [[ ! -z "${SS_DNS}" ]] && echo -e " DNS ：${Green_font_prefix}${SS_DNS}${Font_color_suffix}"
     echo -e "——————————————————————————————————"
-    Link_QR
-    [[ ! -z "${link_ipv4}" ]] && echo -e "${link_ipv4}"
-    [[ ! -z "${link_ipv6}" ]] && echo -e "${link_ipv6}"
-    echo -e "—————————————————————————"
-    echo -e "${Info} Surge 配置："
-    if [[ "${ipv4}" != "IPv4_Error" ]]; then
-        echo -e "$(uname -n) = ss,${ipv4},${SS_PORT},encrypt-method=${SS_METHOD},password=${SS_PASSWORD},tfo=${SS_TFO},udp-relay=true,ecn=true"
-    else
-        echo -e "$(uname -n) = ss,${ipv6},${SS_PORT},encrypt-method=${SS_METHOD},password=${SS_PASSWORD},tfo=${SS_TFO},udp-relay=true,ecn=true"
+
+    # 检查 ShadowTLS 是否安装并获取配置
+    local has_shadowtls=false
+    local stls_listen_port=""
+    local stls_password=""
+    local stls_sni=""
+    
+    if [ -f "/etc/systemd/system/shadowtls.service" ]; then
+        has_shadowtls=true
+        echo -e "\n${Yellow_font_prefix}ShadowTLS 配置：${Font_color_suffix}"
+        echo -e "——————————————————————————————————"
+        
+        # 从 shadowtls.service 文件中获取配置信息
+        stls_listen_port=$(grep -oP '(?<=--listen ::0:)\d+' /etc/systemd/system/shadowtls.service)
+        stls_password=$(grep -oP '(?<=--password )\S+' /etc/systemd/system/shadowtls.service)
+        stls_sni=$(grep -oP '(?<=--tls )\S+' /etc/systemd/system/shadowtls.service)
+
+        echo -e " 监听端口：${Green_font_prefix}${stls_listen_port}${Font_color_suffix}"
+        echo -e " 密码：${Green_font_prefix}${stls_password}${Font_color_suffix}"
+        echo -e " SNI：${Green_font_prefix}${stls_sni}${Font_color_suffix}"
+        echo -e " 版本：3"
+        echo -e "——————————————————————————————————"
     fi
+
+    # 生成 SS 链接
+    local ss_userinfo=$(echo -n "${SS_METHOD}:${SS_PASSWORD}" | base64 | tr -d '\n')
+    local ss_url_ipv4=""
+    local ss_url_ipv6=""
+    if [[ "${ipv4}" != "IPv4_Error" ]]; then
+        ss_url_ipv4="ss://${ss_userinfo}@${ipv4}:${SS_PORT}#SS-${ipv4}"
+    fi
+    if [[ "${ipv6}" != "IPv6_Error" ]]; then
+        ss_url_ipv6="ss://${ss_userinfo}@${ipv6}:${SS_PORT}#SS-${ipv6}"
+    fi
+
+    # 生成普通的 SS 链接和配置
+    echo -e "\n${Yellow_font_prefix}=== Shadowsocks 链接 ===${Font_color_suffix}"
+    [[ ! -z "${ss_url_ipv4}" ]] && echo -e "${Green_font_prefix}IPv4 链接：${Font_color_suffix}${ss_url_ipv4}"
+    [[ ! -z "${ss_url_ipv6}" ]] && echo -e "${Green_font_prefix}IPv6 链接：${Font_color_suffix}${ss_url_ipv6}"
+
+    echo -e "\n${Yellow_font_prefix}=== Shadowsocks 二维码 ===${Font_color_suffix}"
+    if command -v qrencode &> /dev/null; then
+        if [[ ! -z "${ss_url_ipv4}" ]]; then
+            echo -e "${Green_font_prefix}IPv4 二维码：${Font_color_suffix}"
+            echo "${ss_url_ipv4}" | qrencode -t UTF8
+        fi
+        if [[ ! -z "${ss_url_ipv6}" ]]; then
+            echo -e "${Green_font_prefix}IPv6 二维码：${Font_color_suffix}"
+            echo "${ss_url_ipv6}" | qrencode -t UTF8
+        fi
+    else
+        echo -e "${Red_font_prefix}未安装 qrencode，无法生成二维码${Font_color_suffix}"
+    fi
+
+    echo -e "\n${Yellow_font_prefix}=== Surge Shadowsocks 配置 ===${Font_color_suffix}"
+    if [[ "${ipv4}" != "IPv4_Error" ]]; then
+        echo -e "$(uname -n) = ss, ${ipv4}, ${SS_PORT}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, tfo=${SS_TFO}, udp-relay=true"
+    else
+        echo -e "$(uname -n) = ss, ${ipv6}, ${SS_PORT}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, tfo=${SS_TFO}, udp-relay=true"
+    fi
+
+    # 如果安装了 ShadowTLS，生成合并链接和配置
+    if [ "$has_shadowtls" = true ]; then
+        # 生成 SS + ShadowTLS 合并链接
+        local shadow_tls_config="{\"version\":\"3\",\"password\":\"${stls_password}\",\"host\":\"${stls_sni}\",\"port\":\"${stls_listen_port}\",\"address\":\"${ipv4}\"}"
+        local shadow_tls_base64=$(echo -n "${shadow_tls_config}" | base64 | tr -d '\n')
+        local ss_stls_url="ss://${ss_userinfo}@${ipv4}:${SS_PORT}?shadow-tls=${shadow_tls_base64}#SS-${ipv4}"
+
+        echo -e "\n${Yellow_font_prefix}=== SS + ShadowTLS 链接 ===${Font_color_suffix}"
+        echo -e "${Green_font_prefix}合并链接：${Font_color_suffix}${ss_stls_url}"
+
+        echo -e "\n${Yellow_font_prefix}=== SS + ShadowTLS 二维码 ===${Font_color_suffix}"
+        if command -v qrencode &> /dev/null; then
+            echo "${ss_stls_url}" | qrencode -t UTF8
+        else
+            echo -e "${Red_font_prefix}未安装 qrencode，无法生成二维码${Font_color_suffix}"
+        fi
+
+        echo -e "\n${Yellow_font_prefix}=== Surge Shadowsocks + ShadowTLS 配置 ===${Font_color_suffix}"
+        if [[ "${ipv4}" != "IPv4_Error" ]]; then
+            echo -e "$(uname -n) = ss, ${ipv4}, ${stls_listen_port}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
+        else
+            echo -e "$(uname -n) = ss, ${ipv6}, ${stls_listen_port}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
+        fi
+    fi
+
     echo -e "—————————————————————————"
     return 0
 }
