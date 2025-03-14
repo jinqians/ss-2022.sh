@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.4.0"
+SCRIPT_VERSION="1.5.0"
 SS_VERSION=""
 
 # 系统路径
