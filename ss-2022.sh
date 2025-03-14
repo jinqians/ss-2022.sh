@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="1.4.0"
 SS_VERSION=""
 
 # 系统路径
@@ -87,27 +87,51 @@ detect_os() {
 # 检测系统架构
 detect_arch() {
     local arch=$(uname -m)
-    case "${arch}" in
-        "i686"|"i386")
-            OS_ARCH="i686"
+    local os=$(uname -s)
+    
+    case "${os}" in
+        "Darwin")
+            case "${arch}" in
+                "arm64")
+                    OS_ARCH="aarch64-apple-darwin"
+                    ;;
+                "x86_64")
+                    OS_ARCH="x86_64-apple-darwin"
+                    ;;
+            esac
             ;;
-        "armv7"*|"armv6l")
-            OS_ARCH="armv7"
-            ;;
-        "armv8"*|"aarch64")
-            OS_ARCH="aarch64"
-            ;;
-        "x86_64")
-            if [[ "$(uname)" == "Darwin" ]]; then
-                OS_ARCH="x86_64-apple-darwin"
-            else
-                OS_ARCH="x86_64-unknown-linux"
-            fi
+        "Linux")
+            case "${arch}" in
+                "x86_64")
+                    OS_ARCH="x86_64-unknown-linux-gnu"
+                    ;;
+                "aarch64")
+                    OS_ARCH="aarch64-unknown-linux-gnu"
+                    ;;
+                "armv7l"|"armv7")
+                    # 检查是否支持硬浮点
+                    if grep -q "gnueabihf" /proc/cpuinfo; then
+                        OS_ARCH="armv7-unknown-linux-gnueabihf"
+                    else
+                        OS_ARCH="arm-unknown-linux-gnueabi"
+                    fi
+                    ;;
+                "armv6l")
+                    OS_ARCH="arm-unknown-linux-gnueabi"
+                    ;;
+                "i686"|"i386")
+                    OS_ARCH="i686-unknown-linux-musl"
+                    ;;
+                *)
+                    error_exit "不支持的CPU架构: ${arch}"
+                    ;;
+            esac
             ;;
         *)
-            error_exit "不支持的CPU架构: ${arch}"
+            error_exit "不支持的操作系统: ${os}"
             ;;
     esac
+    
     echo -e "${INFO} 检测到系统架构为 [ ${OS_ARCH} ]"
 }
 
@@ -207,7 +231,51 @@ download_ss() {
     local version=$1
     local arch=$2
     local url="https://github.com/shadowsocks/shadowsocks-rust/releases/download/v${version}"
-    local filename="shadowsocks-v${version}.${arch}-gnu.tar.xz"
+    local filename=""
+
+    case "${arch}" in
+        # macOS 系统
+        "aarch64-apple-darwin"|"x86_64-apple-darwin")
+            filename="shadowsocks-v${version}.${arch}.tar.xz"
+            ;;
+        
+        # Linux x86_64 系统
+        "x86_64-unknown-linux-gnu"|"x86_64-unknown-linux-musl")
+            filename="shadowsocks-v${version}.${arch}.tar.xz"
+            ;;
+        
+        # Linux ARM 64位
+        "aarch64-unknown-linux-gnu"|"aarch64-unknown-linux-musl")
+            filename="shadowsocks-v${version}.${arch}.tar.xz"
+            ;;
+        
+        # Linux ARM 32位
+        "arm-unknown-linux-gnueabi"|"arm-unknown-linux-gnueabihf"|"arm-unknown-linux-musleabi"|"arm-unknown-linux-musleabihf")
+            filename="shadowsocks-v${version}.${arch}.tar.xz"
+            ;;
+        
+        # Linux ARMv7
+        "armv7-unknown-linux-gnueabihf"|"armv7-unknown-linux-musleabihf")
+            filename="shadowsocks-v${version}.${arch}.tar.xz"
+            ;;
+        
+        # Linux i686
+        "i686-unknown-linux-musl")
+            filename="shadowsocks-v${version}.${arch}.tar.xz"
+            ;;
+        
+        # Windows
+        "x86_64-pc-windows-gnu")
+            filename="shadowsocks-v${version}.${arch}.zip"
+            ;;
+        "x86_64-pc-windows-msvc")
+            filename="shadowsocks-v${version}.${arch}.zip"
+            ;;
+            
+        *)
+            error_exit "不支持的系统架构: ${arch}"
+            ;;
+    esac
     
     echo -e "${INFO} 开始下载 Shadowsocks Rust ${version}..."
     echo -e "${INFO} 下载地址：${url}/${filename}"
@@ -217,8 +285,15 @@ download_ss() {
         error_exit "Shadowsocks Rust 下载失败！"
     fi
     
-    if ! tar -xf "${filename}"; then
-        error_exit "Shadowsocks Rust 解压失败！"
+    # 根据文件扩展名选择解压方式
+    if [[ "${filename}" == *.tar.xz ]]; then
+        if ! tar -xf "${filename}"; then
+            error_exit "Shadowsocks Rust 解压失败！"
+        fi
+    elif [[ "${filename}" == *.zip ]]; then
+        if ! unzip -o "${filename}"; then
+            error_exit "Shadowsocks Rust 解压失败！"
+        fi
     fi
     
     if [[ ! -e "ssserver" ]]; then
@@ -281,10 +356,10 @@ install_dependencies() {
     
     if [[ ${OS_TYPE} == "centos" ]]; then
         yum update -y
-        yum install -y jq gzip wget curl unzip xz openssl qrencode
+        yum install -y jq gzip wget curl unzip xz openssl qrencode tar
     else
         apt-get update
-        apt-get install -y jq gzip wget curl unzip xz-utils openssl qrencode
+        apt-get install -y jq gzip wget curl unzip xz-utils openssl qrencode tar
     fi
     
     # 设置时区
