@@ -1,8 +1,13 @@
 ## 食用说明
 ### 安装脚本
-
+以下脚本二选一
++ 确保已安装curl
 ```bash
-wget -N --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/ss-2022.sh && chmod +x ss-2022.sh &&./ss-2022.sh
+bash <(curl -L -s ss.jinqians.com)
+```
++ wget下载脚本
+```bash
+wget -N --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/ss-2022.sh && chmod +x ss-2022.sh && ./ss-2022.sh
 ```
 
 # Shadowsocks Rust + ShadowTLS 安装管理脚本
