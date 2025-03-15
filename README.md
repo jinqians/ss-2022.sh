@@ -1,11 +1,17 @@
 ## 食用说明
 ### 安装脚本
-以下脚本二选一
-+ 确保已安装curl
+*请确保已安装curl/wget* 
+
+**以下脚本根据需要选择**
++ ss 2022 | snell | shadowtls 多功能管理菜单
+```bash
+bash <(curl -L -s menu.jinqians.com)
+```
++ ss 2022 安装脚本
 ```bash
 bash <(curl -L -s ss.jinqians.com)
 ```
-+ wget下载脚本
++ 下载脚本，本地执行
 ```bash
 wget -N --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/ss-2022.sh && chmod +x ss-2022.sh && ./ss-2022.sh
 ```
