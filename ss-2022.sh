@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.5.1"
+SCRIPT_VERSION="1.5.2"
 SS_VERSION=""
 
 # 系统路径
@@ -363,7 +363,13 @@ install_dependencies() {
     fi
     
     # 设置时区
-    cp -f /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+    echo -e "${CYAN}正在设置时区...${RESET}"
+    if [ -f "/usr/share/zoneinfo/Asia/Shanghai" ]; then
+        ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+        echo "Asia/Shanghai" > /etc/timezone
+    else
+        echo -e "${RED}时区文件不存在，跳过设置${RESET}"
+    fi
     echo -e "${SUCCESS} 系统依赖安装完成！"
 }
 
