@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.5.2"
+SCRIPT_VERSION="1.5.3"
 SS_VERSION=""
 
 # 系统路径
@@ -823,21 +823,15 @@ Uninstall() {
 
 # 获取IPv4地址
 getipv4() {
-    ipv4=$(wget -qO- -4 -t1 -T2 ipinfo.io/ip)
+    ipv4=$(curl -s4 https://api.ipify.org)
     if [[ -z "${ipv4}" ]]; then
-        ipv4=$(wget -qO- -4 -t1 -T2 api.ip.sb/ip)
-        if [[ -z "${ipv4}" ]]; then
-            ipv4=$(wget -qO- -4 -t1 -T2 members.3322.org/dyndns/getip)
-            if [[ -z "${ipv4}" ]]; then
-                ipv4="IPv4_Error"
-            fi
-        fi
+        ipv4="IPv4_Error"
     fi
 }
 
 # 获取IPv6地址
 getipv6() {
-    ipv6=$(wget -qO- -6 -t1 -T2 ifconfig.co)
+    ipv6=$(curl -s6 https://api64.ipify.org)
     if [[ -z "${ipv6}" ]]; then
         ipv6="IPv6_Error"
     fi
@@ -870,55 +864,44 @@ Link_QR() {
 # 查看配置信息
 View() {
     check_installed_status
-    read_config
     getipv4
     getipv6
-    echo -e "Shadowsocks Rust 配置："
-    echo -e "——————————————————————————————————"
-    [[ "${ipv4}" != "IPv4_Error" ]] && echo -e " 地址：${Green_font_prefix}${ipv4}${Font_color_suffix}"
-    [[ "${ipv6}" != "IPv6_Error" ]] && echo -e " 地址：${Green_font_prefix}${ipv6}${Font_color_suffix}"
-    echo -e " 端口：${Green_font_prefix}${SS_PORT}${Font_color_suffix}"
-    echo -e " 密码：${Green_font_prefix}${SS_PASSWORD}${Font_color_suffix}"
-    echo -e " 加密：${Green_font_prefix}${SS_METHOD}${Font_color_suffix}"
-    echo -e " TFO ：${Green_font_prefix}${SS_TFO}${Font_color_suffix}"
-    [[ ! -z "${SS_DNS}" ]] && echo -e " DNS ：${Green_font_prefix}${SS_DNS}${Font_color_suffix}"
-    echo -e "——————————————————————————————————"
-
-    # 检查 ShadowTLS 是否安装并获取配置
-    local has_shadowtls=false
-    local stls_listen_port=""
-    local stls_password=""
-    local stls_sni=""
     
-    if [ -f "/etc/systemd/system/shadowtls-ss.service" ]; then
-        has_shadowtls=true
-        echo -e "\n${Yellow_font_prefix}ShadowTLS 配置：${Font_color_suffix}"
-        echo -e "——————————————————————————————————"
+    # 从配置文件读取信息
+    if [[ -f "${CONFIG_PATH}" ]]; then
+        local config_port=$(jq -r '.server_port' "${CONFIG_PATH}")
+        local config_password=$(jq -r '.password' "${CONFIG_PATH}")
+        local config_method=$(jq -r '.method' "${CONFIG_PATH}")
+        local config_tfo=$(jq -r '.fast_open' "${CONFIG_PATH}")
+        local config_dns=$(jq -r '.nameserver // empty' "${CONFIG_PATH}")
         
-        # 从 shadowtls.service 文件中获取配置信息
-        stls_listen_port=$(grep -oP '(?<=--listen ::0:)\d+' /etc/systemd/system/shadowtls-ss.service)
-        stls_password=$(grep -oP '(?<=--password )\S+' /etc/systemd/system/shadowtls-ss.service)
-        stls_sni=$(grep -oP '(?<=--tls )\S+' /etc/systemd/system/shadowtls-ss.service)
-
-        echo -e " 监听端口：${Green_font_prefix}${stls_listen_port}${Font_color_suffix}"
-        echo -e " 密码：${Green_font_prefix}${stls_password}${Font_color_suffix}"
-        echo -e " SNI：${Green_font_prefix}${stls_sni}${Font_color_suffix}"
-        echo -e " 版本：3"
+        echo -e "Shadowsocks Rust 配置："
         echo -e "——————————————————————————————————"
+        [[ "${ipv4}" != "IPv4_Error" ]] && echo -e " 地址：${Green_font_prefix}${ipv4}${Font_color_suffix}"
+        [[ "${ipv6}" != "IPv6_Error" ]] && echo -e " 地址：${Green_font_prefix}${ipv6}${Font_color_suffix}"
+        echo -e " 端口：${Green_font_prefix}${config_port}${Font_color_suffix}"
+        echo -e " 密码：${Green_font_prefix}${config_password}${Font_color_suffix}"
+        echo -e " 加密：${Green_font_prefix}${config_method}${Font_color_suffix}"
+        echo -e " TFO ：${Green_font_prefix}${config_tfo}${Font_color_suffix}"
+        [[ ! -z "${config_dns}" ]] && echo -e " DNS ：${Green_font_prefix}${config_dns}${Font_color_suffix}"
+        echo -e "——————————————————————————————————"
+    else
+        echo -e "${Error} 配置文件不存在！"
+        return 1
     fi
 
     # 生成 SS 链接
-    local ss_userinfo=$(echo -n "${SS_METHOD}:${SS_PASSWORD}" | base64 | tr -d '\n')
+    local userinfo=$(echo -n "${config_method}:${config_password}" | base64 | tr -d '\n')
     local ss_url_ipv4=""
     local ss_url_ipv6=""
+    
     if [[ "${ipv4}" != "IPv4_Error" ]]; then
-        ss_url_ipv4="ss://${ss_userinfo}@${ipv4}:${SS_PORT}#SS-${ipv4}"
+        ss_url_ipv4="ss://${userinfo}@${ipv4}:${config_port}#SS-${ipv4}"
     fi
     if [[ "${ipv6}" != "IPv6_Error" ]]; then
-        ss_url_ipv6="ss://${ss_userinfo}@${ipv6}:${SS_PORT}#SS-${ipv6}"
+        ss_url_ipv6="ss://${userinfo}@${ipv6}:${config_port}#SS-${ipv6}"
     fi
 
-    # 生成普通的 SS 链接和配置
     echo -e "\n${Yellow_font_prefix}=== Shadowsocks 链接 ===${Font_color_suffix}"
     [[ ! -z "${ss_url_ipv4}" ]] && echo -e "${Green_font_prefix}IPv4 链接：${Font_color_suffix}${ss_url_ipv4}"
     [[ ! -z "${ss_url_ipv6}" ]] && echo -e "${Green_font_prefix}IPv6 链接：${Font_color_suffix}${ss_url_ipv6}"
@@ -937,19 +920,29 @@ View() {
         echo -e "${Red_font_prefix}未安装 qrencode，无法生成二维码${Font_color_suffix}"
     fi
 
-    echo -e "\n${Yellow_font_prefix}=== Surge Shadowsocks 配置 ===${Font_color_suffix}"
+    echo -e "\n${Yellow_font_prefix}=== Surge 配置 ===${Font_color_suffix}"
     if [[ "${ipv4}" != "IPv4_Error" ]]; then
-        echo -e "$(uname -n) = ss, ${ipv4}, ${SS_PORT}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, tfo=${SS_TFO}, udp-relay=true"
+        echo -e "SS-${ipv4} = ss, ${ipv4}, ${config_port}, encrypt-method=${config_method}, password=${config_password}, tfo=${config_tfo}, udp-relay=true"
     else
-        echo -e "$(uname -n) = ss, ${ipv6}, ${SS_PORT}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, tfo=${SS_TFO}, udp-relay=true"
+        echo -e "SS-${ipv6} = ss, ${ipv6}, ${config_port}, encrypt-method=${config_method}, password=${config_password}, tfo=${config_tfo}, udp-relay=true"
     fi
 
-    # 如果安装了 ShadowTLS，生成合并链接和配置
-    if [ "$has_shadowtls" = true ]; then
+    # 检查 ShadowTLS 是否安装并获取配置
+    if [ -f "/etc/systemd/system/shadowtls-ss.service" ]; then
+        local stls_listen_port=$(grep -oP '(?<=--listen ::0:)\d+' /etc/systemd/system/shadowtls-ss.service)
+        local stls_password=$(grep -oP '(?<=--password )\S+' /etc/systemd/system/shadowtls-ss.service)
+        local stls_sni=$(grep -oP '(?<=--tls )\S+' /etc/systemd/system/shadowtls-ss.service)
+
+        echo -e "\n${Yellow_font_prefix}=== ShadowTLS 配置 ===${Font_color_suffix}"
+        echo -e " 监听端口：${Green_font_prefix}${stls_listen_port}${Font_color_suffix}"
+        echo -e " 密码：${Green_font_prefix}${stls_password}${Font_color_suffix}"
+        echo -e " SNI：${Green_font_prefix}${stls_sni}${Font_color_suffix}"
+        echo -e " 版本：3"
+
         # 生成 SS + ShadowTLS 合并链接
         local shadow_tls_config="{\"version\":\"3\",\"password\":\"${stls_password}\",\"host\":\"${stls_sni}\",\"port\":\"${stls_listen_port}\",\"address\":\"${ipv4}\"}"
         local shadow_tls_base64=$(echo -n "${shadow_tls_config}" | base64 | tr -d '\n')
-        local ss_stls_url="ss://${ss_userinfo}@${ipv4}:${SS_PORT}?shadow-tls=${shadow_tls_base64}#SS-${ipv4}"
+        local ss_stls_url="ss://${userinfo}@${ipv4}:${config_port}?shadow-tls=${shadow_tls_base64}#SS-${ipv4}"
 
         echo -e "\n${Yellow_font_prefix}=== SS + ShadowTLS 链接 ===${Font_color_suffix}"
         echo -e "${Green_font_prefix}合并链接：${Font_color_suffix}${ss_stls_url}"
@@ -963,9 +956,9 @@ View() {
 
         echo -e "\n${Yellow_font_prefix}=== Surge Shadowsocks + ShadowTLS 配置 ===${Font_color_suffix}"
         if [[ "${ipv4}" != "IPv4_Error" ]]; then
-            echo -e "$(uname -n) = ss, ${ipv4}, ${stls_listen_port}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
+            echo -e "SS-${ipv4} = ss, ${ipv4}, ${stls_listen_port}, encrypt-method=${config_method}, password=${config_password}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
         else
-            echo -e "$(uname -n) = ss, ${ipv6}, ${stls_listen_port}, encrypt-method=${SS_METHOD}, password=${SS_PASSWORD}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
+            echo -e "SS-${ipv6} = ss, ${ipv6}, ${stls_listen_port}, encrypt-method=${config_method}, password=${config_password}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
         fi
     fi
 
