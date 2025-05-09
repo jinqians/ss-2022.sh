@@ -891,7 +891,7 @@ View() {
     fi
 
     # 生成 SS 链接
-    local userinfo=$(echo -n "${config_method}:${config_password}" | base64 | tr -d '\n')
+    local userinfo=$(echo -n "${config_method}:${config_password}" | base64 -w 0)
     local ss_url_ipv4=""
     local ss_url_ipv6=""
     
@@ -941,7 +941,7 @@ View() {
 
         # 生成 SS + ShadowTLS 合并链接
         local shadow_tls_config="{\"version\":\"3\",\"password\":\"${stls_password}\",\"host\":\"${stls_sni}\",\"port\":\"${stls_listen_port}\",\"address\":\"${ipv4}\"}"
-        local shadow_tls_base64=$(echo -n "${shadow_tls_config}" | base64 | tr -d '\n')
+        local shadow_tls_base64=$(echo -n "${shadow_tls_config}" | base64 -w 0)
         local ss_stls_url="ss://${userinfo}@${ipv4}:${config_port}?shadow-tls=${shadow_tls_base64}#SS-${ipv4}"
 
         echo -e "\n${Yellow_font_prefix}=== SS + ShadowTLS 链接 ===${Font_color_suffix}"
