@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.5.3"
+SCRIPT_VERSION="1.5.4"
 SS_VERSION=""
 
 # 系统路径
@@ -224,6 +224,45 @@ check_ver_comparison() {
         echo -e "${Info} 当前已是最新版本 [ ${new_ver} ]"
         return 1
     fi
+}
+
+# 获取当前安装版本
+get_current_version() {
+    if [[ -f "${VERSION_FILE}" ]]; then
+        current_ver=$(cat "${VERSION_FILE}")
+        echo "${current_ver}"
+    else
+        echo "0.0.0"
+    fi
+}
+
+# 版本号比较函数
+version_compare() {
+    local current=$1
+    local latest=$2
+    
+    # 移除版本号中的 'v' 前缀
+    current=${current#v}
+    latest=${latest#v}
+    
+    if [[ "${current}" == "${latest}" ]]; then
+        return 1  # 版本相同
+    fi
+    
+    # 将版本号分割为数组
+    IFS='.' read -r -a current_parts <<< "${current}"
+    IFS='.' read -r -a latest_parts <<< "${latest}"
+    
+    # 比较每个部分
+    for i in "${!current_parts[@]}"; do
+        if [[ "${current_parts[$i]}" -lt "${latest_parts[$i]}" ]]; then
+            return 0  # 当前版本低于最新版本
+        elif [[ "${current_parts[$i]}" -gt "${latest_parts[$i]}" ]]; then
+            return 1  # 当前版本高于最新版本
+        fi
+    done
+    
+    return 1
 }
 
 # 下载 Shadowsocks Rust
@@ -793,9 +832,33 @@ Restart() {
 # 更新
 Update() {
     check_installed_status
+    
+    # 获取当前版本
+    current_ver=$(get_current_version)
+    echo -e "${Info} 当前版本: [ ${current_ver} ]"
+    
+    # 获取最新版本
     check_new_ver
-    check_ver_comparison
-    echo -e "${Info} Shadowsocks Rust 更新完毕！"
+    
+    # 比较版本
+    if version_compare "${current_ver}" "${new_ver}"; then
+        echo -e "${Info} 发现新版本 [ ${new_ver} ]"
+        echo -e "${Info} 是否更新？[Y/n]"
+        read -p "(默认: y)：" yn
+        [[ -z "${yn}" ]] && yn="y"
+        if [[ ${yn} == [Yy] ]]; then
+            echo -e "${Info} 开始更新 Shadowsocks Rust..."
+            detect_arch
+            download_ss "${new_ver#v}" "${OS_ARCH}"
+            systemctl restart ss-rust
+            echo -e "${Success} Shadowsocks Rust 已更新到最新版本 [ ${new_ver} ]"
+        else
+            echo -e "${Info} 已取消更新"
+        fi
+    else
+        echo -e "${Info} 当前已是最新版本 [ ${new_ver} ]，无需更新"
+    fi
+    
     sleep 3s
     Start_Menu
 }
@@ -994,8 +1057,8 @@ Update_Shell() {
         return 1
     fi
     
-    # 获取最新版本号
-    sh_new_ver=$(grep 'SCRIPT_VERSION="' ${temp_file} | awk -F '"' '{print $2}')
+    # 获取最新版本号（修复版本号提取）
+    sh_new_ver=$(grep -m1 '^SCRIPT_VERSION=' ${temp_file} | cut -d'"' -f2)
     if [[ -z ${sh_new_ver} ]]; then
         echo -e "${Error} 获取最新版本号失败！"
         rm -f ${temp_file}
