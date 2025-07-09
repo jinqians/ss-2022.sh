@@ -886,18 +886,22 @@ Uninstall() {
 
 # 获取IPv4地址
 getipv4() {
-    ipv4=$(curl -s4 https://api.ipify.org)
+    set +e
+    ipv4=$(curl -m 2 -s4 https://api.ipify.org)
     if [[ -z "${ipv4}" ]]; then
         ipv4="IPv4_Error"
     fi
+    set -e
 }
 
 # 获取IPv6地址
 getipv6() {
-    ipv6=$(curl -s6 https://api64.ipify.org)
+    set +e
+    ipv6=$(curl -m 2 -s6 https://api64.ipify.org)
     if [[ -z "${ipv6}" ]]; then
         ipv6="IPv6_Error"
     fi
+    set -e
 }
 
 # 生成安全的Base64编码
@@ -930,6 +934,12 @@ View() {
     getipv4
     getipv6
     
+    # 新增：如果 IPv4 和 IPv6 都获取失败，直接报错退出
+    if [[ "${ipv4}" == "IPv4_Error" && "${ipv6}" == "IPv6_Error" ]]; then
+        echo -e "${Error} 无法获取 IPv4 或 IPv6 地址，无法输出配置信息！"
+        return 1
+    fi
+    
     # 从配置文件读取信息
     if [[ -f "${CONFIG_PATH}" ]]; then
         local config_port=$(jq -r '.server_port' "${CONFIG_PATH}")
@@ -937,7 +947,14 @@ View() {
         local config_method=$(jq -r '.method' "${CONFIG_PATH}")
         local config_tfo=$(jq -r '.fast_open' "${CONFIG_PATH}")
         local config_dns=$(jq -r '.nameserver // empty' "${CONFIG_PATH}")
-        
+
+        # 修复：赋值给全局变量，保证后续二维码/链接等输出正常
+        SS_PORT="$config_port"
+        SS_PASSWORD="$config_password"
+        SS_METHOD="$config_method"
+        SS_TFO="$config_tfo"
+        SS_DNS="$config_dns"
+
         echo -e "Shadowsocks Rust 配置："
         echo -e "——————————————————————————————————"
         [[ "${ipv4}" != "IPv4_Error" ]] && echo -e " 地址：${Green_font_prefix}${ipv4}${Font_color_suffix}"
@@ -986,7 +1003,8 @@ View() {
     echo -e "\n${Yellow_font_prefix}=== Surge 配置 ===${Font_color_suffix}"
     if [[ "${ipv4}" != "IPv4_Error" ]]; then
         echo -e "SS-${ipv4} = ss, ${ipv4}, ${config_port}, encrypt-method=${config_method}, password=${config_password}, tfo=${config_tfo}, udp-relay=true"
-    else
+    fi
+    if [[ "${ipv6}" != "IPv6_Error" ]]; then
         echo -e "SS-${ipv6} = ss, ${ipv6}, ${config_port}, encrypt-method=${config_method}, password=${config_password}, tfo=${config_tfo}, udp-relay=true"
     fi
 
@@ -1008,11 +1026,11 @@ View() {
         local ss_stls_url="ss://${userinfo}@${ipv4}:${config_port}?shadow-tls=${shadow_tls_base64}#SS-${ipv4}"
 
         echo -e "\n${Yellow_font_prefix}=== SS + ShadowTLS 链接 ===${Font_color_suffix}"
-        echo -e "${Green_font_prefix}合并链接：${Font_color_suffix}${ss_stls_url}"
+        [[ "${ipv4}" != "IPv4_Error" ]] && echo -e "${Green_font_prefix}合并链接：${Font_color_suffix}${ss_stls_url}"
 
         echo -e "\n${Yellow_font_prefix}=== SS + ShadowTLS 二维码 ===${Font_color_suffix}"
         if command -v qrencode &> /dev/null; then
-            echo "${ss_stls_url}" | qrencode -t UTF8
+            [[ "${ipv4}" != "IPv4_Error" ]] && echo "${ss_stls_url}" | qrencode -t UTF8
         else
             echo -e "${Red_font_prefix}未安装 qrencode，无法生成二维码${Font_color_suffix}"
         fi
@@ -1020,7 +1038,8 @@ View() {
         echo -e "\n${Yellow_font_prefix}=== Surge Shadowsocks + ShadowTLS 配置 ===${Font_color_suffix}"
         if [[ "${ipv4}" != "IPv4_Error" ]]; then
             echo -e "SS-${ipv4} = ss, ${ipv4}, ${stls_listen_port}, encrypt-method=${config_method}, password=${config_password}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
-        else
+        fi
+        if [[ "${ipv6}" != "IPv6_Error" ]]; then
             echo -e "SS-${ipv6} = ss, ${ipv6}, ${stls_listen_port}, encrypt-method=${config_method}, password=${config_password}, shadow-tls-password=${stls_password}, shadow-tls-sni=${stls_sni}, shadow-tls-version=3, udp-relay=true"
         fi
     fi
