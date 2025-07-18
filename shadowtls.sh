@@ -157,12 +157,16 @@ get_snell_version() {
     if ! command -v snell-server &> /dev/null; then
         return 1
     fi
-    local version=$(snell-server --version 2>&1 | grep -oP 'v\K\d+')
-    if [ -z "$version" ]; then
-        # 如果无法获取版本，则默认为 4
-        echo "4"
+    
+    # 尝试获取版本信息
+    local version_output=$(snell-server --v 2>&1)
+    
+    # 检查是否为 v5 版本
+    if echo "$version_output" | grep -q "v5"; then
+        echo "5"
     else
-        echo "$version"
+        # 默认为 v4 版本
+        echo "4"
     fi
 }
 
@@ -398,7 +402,14 @@ generate_snell_links() {
     echo -e "  - 版本：3"
     
     echo -e "\n${YELLOW}=== Surge 配置 ===${RESET}"
-    echo -e "Snell + ShadowTLS = snell, ${server_ip}, ${listen_port}, psk = ${snell_psk}, version = ${snell_version}, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_sni}, shadow-tls-version = 3"
+    
+    # v5 输出 v4/v5 两种格式，v4只输出v4
+    if [ "$snell_version" = "5" ]; then
+        echo -e "Snell v4 + ShadowTLS = snell, ${server_ip}, ${listen_port}, psk = ${snell_psk}, version = 4, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_sni}, shadow-tls-version = 3"
+        echo -e "Snell v5 + ShadowTLS = snell, ${server_ip}, ${listen_port}, psk = ${snell_psk}, version = 5, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_sni}, shadow-tls-version = 3"
+    else
+        echo -e "Snell + ShadowTLS = snell, ${server_ip}, ${listen_port}, psk = ${snell_psk}, version = 4, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_sni}, shadow-tls-version = 3"
+    fi
 }
 
 # 创建服务文件的模板
@@ -441,6 +452,33 @@ StandardError=append:/var/log/shadowtls-${identifier}.log
 SyslogIdentifier=${identifier}
 Restart=always
 RestartSec=3
+
+# 性能优化参数
+LimitNOFILE=65535
+CPUAffinity=0
+Nice=0
+IOSchedulingClass=realtime
+IOSchedulingPriority=0
+MemoryLimit=512M
+CPUQuota=50%
+LimitCORE=infinity
+LimitRSS=infinity
+LimitNPROC=65535
+LimitAS=infinity
+SystemCallFilter=@system-service
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# 系统优化参数
+Environment=RUST_THREADS=1
+Environment=MONOIO_FORCE_LEGACY_DRIVER=1
+Environment=RUST_LOG_LEVEL=info
+Environment=RUST_LOG_TARGET=journal
+Environment=RUST_LOG_FORMAT=json
+Environment=RUST_LOG_FILTER=info,shadow_tls=info
 
 [Install]
 WantedBy=multi-user.target
@@ -801,7 +839,13 @@ view_config() {
                             echo -e "  - 版本：3"
                             
                             echo -e "\n${GREEN}Surge 配置：${RESET}"
-                            echo -e "Snell-${port} = snell, ${server_ip}, ${stls_port}, psk = ${psk}, version = 4, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_domain}, shadow-tls-version = 3"
+                            local snell_version=$(get_snell_version)
+                            if [ "$snell_version" = "5" ]; then
+                                echo -e "Snell v4 + ShadowTLS = snell, ${server_ip}, ${stls_port}, psk = ${psk}, version = 4, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_domain}, shadow-tls-version = 3"
+                                echo -e "Snell v5 + ShadowTLS = snell, ${server_ip}, ${stls_port}, psk = ${psk}, version = 5, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_domain}, shadow-tls-version = 3"
+                            else
+                                echo -e "Snell + ShadowTLS = snell, ${server_ip}, ${stls_port}, psk = ${psk}, version = 4, reuse = true, tfo = true, shadow-tls-password = ${stls_password}, shadow-tls-sni = ${stls_domain}, shadow-tls-version = 3"
+                            fi
                             
                             # 检查服务状态
                             local service_status=$(systemctl is-active "shadowtls-snell-${port}")
