@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.5.5"
+SCRIPT_VERSION="1.6"
 SS_VERSION=""
 
 # 系统路径
@@ -167,24 +167,6 @@ Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_p
 Info="${Green_font_prefix}[信息]${Font_color_suffix}"
 Error="${Red_font_prefix}[错误]${Font_color_suffix}"
 Tip="${Yellow_font_prefix}[注意]${Font_color_suffix}"
-
-check_sys() {
-    if [[ -f /etc/redhat-release ]]; then
-        release="centos"
-    elif cat /etc/issue | grep -q -E -i "debian"; then
-        release="debian"
-    elif cat /etc/issue | grep -q -E -i "ubuntu"; then
-        release="ubuntu"
-    elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
-        release="centos"
-    elif cat /proc/version | grep -q -E -i "debian"; then
-        release="debian"
-    elif cat /proc/version | grep -q -E -i "ubuntu"; then
-        release="ubuntu"
-    elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
-        release="centos"
-    fi
-}
 
 check_installed_status() {
     if [[ ! -e ${BINARY_PATH} ]]; then
@@ -736,6 +718,9 @@ modify_config() {
 Install() {
     [[ -e ${BINARY_PATH} ]] && echo -e "${Error} 检测到 Shadowsocks Rust 已安装！" && exit 1
     
+    echo -e "${Info} 检测系统信息..."
+    detect_os
+    
     echo -e "${Info} 开始设置配置..."
     set_port
     set_method
@@ -1148,7 +1133,7 @@ Start_Menu() {
     while true; do
         clear
         check_root
-        check_sys
+        detect_os
         action=${1:-}
     echo -e "${GREEN}============================================${RESET}"
     echo -e "${GREEN}          SS - 2022 管理脚本 ${RESET}"
