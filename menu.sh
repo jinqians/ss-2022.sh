@@ -14,7 +14,7 @@ CYAN='\033[0;36m'
 RESET='\033[0m'
 
 # 当前版本号
-current_version="2.0"
+current_version="3.0"
 
 # 安装全局命令
 install_global_command() {
@@ -296,6 +296,11 @@ manage_shadowtls() {
     bash <(curl -sL https://raw.githubusercontent.com/jinqians/snell.sh/main/shadowtls.sh)
 }
 
+# 安装/管理 VLESS Reality
+manage_vless() {
+    # 从你的仓库拉取并执行 vless 管理脚本
+    bash <(curl -sL https://raw.githubusercontent.com/jinqians/vless/refs/heads/main/vless.sh)
+}
 # 卸载 Snell
 uninstall_snell() {
     echo -e "${CYAN}正在卸载 Snell${RESET}"
@@ -389,16 +394,17 @@ show_menu() {
     echo -e "${YELLOW}=== 安装管理 ===${RESET}"
     echo -e "${GREEN}1.${RESET} Snell 安装管理"
     echo -e "${GREEN}2.${RESET} SS-2022 安装管理"
-    echo -e "${GREEN}3.${RESET} ShadowTLS 安装管理"
+    echo -e "${GREEN}3.${RESET} VLESS Reality 安装管理"
+    echo -e "${GREEN}4.${RESET} ShadowTLS 安装管理"
     
     echo -e "\n${YELLOW}=== 卸载功能 ===${RESET}"
-    echo -e "${GREEN}4.${RESET} 卸载 Snell"
-    echo -e "${GREEN}5.${RESET} 卸载 SS-2022"
-    echo -e "${GREEN}6.${RESET} 卸载 ShadowTLS"
+    echo -e "${GREEN}5.${RESET} 卸载 Snell"
+    echo -e "${GREEN}6.${RESET} 卸载 SS-2022"
+    echo -e "${GREEN}7.${RESET} 卸载 ShadowTLS"
     
     echo -e "\n${YELLOW}=== 系统功能 ===${RESET}"
-    echo -e "${GREEN}7.${RESET} 更新脚本"
-    echo -e "${GREEN}8.${RESET} 流量管理(请勿使用，功能不完善)"
+    echo -e "${GREEN}8.${RESET} 更新脚本"
+    echo -e "${GREEN}9.${RESET} 流量管理(请勿使用，功能不完善)"
     echo -e "${GREEN}0.${RESET} 退出"
     
     echo -e "${CYAN}============================================${RESET}"
@@ -425,21 +431,24 @@ while true; do
             manage_ss_rust
             ;;
         3)
-            manage_shadowtls
+            manage_vless
             ;;
         4)
-            uninstall_snell
+            manage_shadowtls
             ;;
         5)
-            uninstall_ss_rust
+            uninstall_snell
             ;;
         6)
-            uninstall_shadowtls
+            uninstall_ss_rust
             ;;
         7)
-            update_script
+            uninstall_shadowtls
             ;;
         8)
+            update_script
+            ;;
+        9)
             bash <(curl -sL https://raw.githubusercontent.com/jinqians/snell.sh/main/traffic.sh)
             read -p "按任意键继续..."
             ;;
@@ -448,7 +457,7 @@ while true; do
             exit 0
             ;;
         *)
-            echo -e "${RED}请输入正确的选项 [0-8]${RESET}"
+            echo -e "${RED}请输入正确的选项 [0-9]${RESET}"
             ;;
     esac
     echo -e "\n${CYAN}按任意键返回主菜单...${RESET}"
