@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.6"
+SCRIPT_VERSION="1.7"
 SS_VERSION=""
 
 # 系统路径
@@ -23,6 +23,10 @@ BINARY_PATH="/usr/local/bin/ss-rust"
 CONFIG_PATH="/etc/ss-rust/config.json"
 VERSION_FILE="/etc/ss-rust/ver.txt"
 SYSCTL_CONF="/etc/sysctl.d/local.conf"
+MAINLAND_BLOCK_SCRIPT="/usr/local/bin/block-mainland.sh"
+MAINLAND_EXTRACT_SCRIPT="/usr/local/bin/extract-cn-ip-from-mmdb.py"
+MAINLAND_BLOCK_REPO_URL="https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/block-mainland.sh"
+MAINLAND_EXTRACT_REPO_URL="https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/extract-cn-ip-from-mmdb.py"
 
 # 颜色定义
 readonly RED='\033[0;31m'
@@ -1123,6 +1127,114 @@ install_shadowtls() {
     Before_Start_Menu
 }
 
+# 部署中国大陆IP屏蔽脚本
+install_mainland_block_scripts() {
+    local local_block_script="${SCRIPT_PATH}/block-mainland.sh"
+    local local_extract_script="${SCRIPT_PATH}/extract-cn-ip-from-mmdb.py"
+
+    echo -e "${Info} 准备部署中国大陆IP屏蔽脚本..."
+
+    if [[ -f "${local_block_script}" ]]; then
+        cp -f "${local_block_script}" "${MAINLAND_BLOCK_SCRIPT}"
+    else
+        wget --no-check-certificate -O "${MAINLAND_BLOCK_SCRIPT}" "${MAINLAND_BLOCK_REPO_URL}"
+    fi
+
+    if [[ -f "${local_extract_script}" ]]; then
+        cp -f "${local_extract_script}" "${MAINLAND_EXTRACT_SCRIPT}"
+    else
+        wget --no-check-certificate -O "${MAINLAND_EXTRACT_SCRIPT}" "${MAINLAND_EXTRACT_REPO_URL}"
+    fi
+
+    if [[ ! -s "${MAINLAND_BLOCK_SCRIPT}" || ! -s "${MAINLAND_EXTRACT_SCRIPT}" ]]; then
+        echo -e "${Error} 大陆IP屏蔽脚本部署失败，请检查网络或仓库文件"
+        return 1
+    fi
+
+    chmod +x "${MAINLAND_BLOCK_SCRIPT}" "${MAINLAND_EXTRACT_SCRIPT}"
+    echo -e "${Success} 大陆IP屏蔽脚本部署完成"
+    return 0
+}
+
+run_mainland_block_cmd() {
+    local cmd="$1"
+
+    if [[ ! -x "${MAINLAND_BLOCK_SCRIPT}" ]]; then
+        echo -e "${Error} 未找到可执行脚本：${MAINLAND_BLOCK_SCRIPT}"
+        return 1
+    fi
+
+    if [[ -n "${cmd}" ]]; then
+        PYTHONIOENCODING=UTF-8 LC_ALL=C.UTF-8 LANG=C.UTF-8 bash "${MAINLAND_BLOCK_SCRIPT}" "${cmd}"
+    else
+        PYTHONIOENCODING=UTF-8 LC_ALL=C.UTF-8 LANG=C.UTF-8 bash "${MAINLAND_BLOCK_SCRIPT}"
+    fi
+}
+
+# 中国大陆IP屏蔽菜单
+mainland_block_menu() {
+    check_installed_status || return 1
+
+    if ! install_mainland_block_scripts; then
+        Before_Start_Menu
+        return 1
+    fi
+
+    while true; do
+        clear
+        echo -e "${GREEN}============================================${RESET}"
+        echo -e "${GREEN}        中国大陆IP屏蔽管理 ${RESET}"
+        echo -e "${GREEN}============================================${RESET}"
+        echo -e " ${Green_font_prefix}1.${Font_color_suffix} 初始化并启用屏蔽"
+        echo -e " ${Green_font_prefix}2.${Font_color_suffix} 更新中国大陆IP库"
+        echo -e " ${Green_font_prefix}3.${Font_color_suffix} 查看屏蔽状态"
+        echo -e " ${Green_font_prefix}4.${Font_color_suffix} 禁用屏蔽规则"
+        echo -e " ${Green_font_prefix}5.${Font_color_suffix} 进入高级菜单"
+        echo -e " ${Green_font_prefix}0.${Font_color_suffix} 返回上一级"
+        echo -e "${GREEN}============================================${RESET}"
+        echo
+
+        read -e -p " 请输入数字 [0-5]：" mainland_num
+        case "${mainland_num}" in
+            1)
+                if run_mainland_block_cmd "enable"; then
+                    echo -e "${Success} 大陆IP屏蔽启用完成"
+                else
+                    echo -e "${Error} 大陆IP屏蔽启用失败"
+                fi
+                ;;
+            2)
+                if run_mainland_block_cmd "update"; then
+                    echo -e "${Success} 大陆IP库更新完成"
+                else
+                    echo -e "${Error} 大陆IP库更新失败"
+                fi
+                ;;
+            3)
+                run_mainland_block_cmd "status" || echo -e "${Error} 状态查询失败"
+                ;;
+            4)
+                if run_mainland_block_cmd "disable"; then
+                    echo -e "${Success} 大陆IP屏蔽已禁用"
+                else
+                    echo -e "${Error} 禁用失败"
+                fi
+                ;;
+            5)
+                run_mainland_block_cmd
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                echo -e "${Error} 请输入正确数字 [0-5]"
+                ;;
+        esac
+
+        echo && echo -n -e "${Yellow_font_prefix}* 按回车返回此菜单 *${Font_color_suffix}" && read temp
+    done
+}
+
 # 返回主菜单
 Before_Start_Menu() {
     echo && echo -n -e "${Yellow_font_prefix}* 按回车返回主菜单 *${Font_color_suffix}" && read temp
@@ -1157,7 +1269,8 @@ Start_Menu() {
  ${Green_font_prefix}9.${Font_color_suffix} 查看 运行状态
 ——————————————————————————————————
  ${Green_font_prefix}10.${Font_color_suffix} 安装 ShadowTLS
- ${Green_font_prefix}11.${Font_color_suffix} 退出脚本
+ ${Green_font_prefix}11.${Font_color_suffix} 中国大陆IP屏蔽
+ ${Green_font_prefix}12.${Font_color_suffix} 退出脚本
 ——————————————————————————————————
 ==================================" && echo
         if [[ -e ${BINARY_PATH} ]]; then
@@ -1171,7 +1284,7 @@ Start_Menu() {
             echo -e " 当前状态：${Red_font_prefix}未安装${Font_color_suffix}"
         fi
         echo
-        read -e -p " 请输入数字 [0-10]：" num
+        read -e -p " 请输入数字 [0-12]：" num
         case "$num" in
             0)
                 Update_Shell
@@ -1212,11 +1325,14 @@ Start_Menu() {
                 install_shadowtls
                 ;;
             11)
+                mainland_block_menu
+                ;;
+            12)
                 echo -e "${Info} 退出脚本..."
                 exit 0
                 ;;
             *)
-                echo -e "${Error} 请输入正确数字 [0-10]"
+                echo -e "${Error} 请输入正确数字 [0-12]"
                 sleep 2
                 ;;
         esac

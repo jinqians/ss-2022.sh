@@ -3,7 +3,7 @@
 # 作者: jinqians
 # 日期: 2025年2月
 # 网站：jinqians.com
-# 描述: 这个脚本用于统一管理 Snell、SS-Rust 和 ShadowTLS
+# 描述: 这个脚本用于统一管理 Snell、SS-Rust 和 ShadowTLS（将逐步和snell管理菜单分开）
 # =========================================
 
 # 定义颜色代码
@@ -14,7 +14,12 @@ CYAN='\033[0;36m'
 RESET='\033[0m'
 
 # 当前版本号
-current_version="3.0"
+current_version="3.1"
+
+# 中国大陆屏蔽脚本仓库地址
+MAINLAND_BLOCK_URL="https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/block-mainland.sh"
+MAINLAND_EXTRACT_URL="https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/extract-cn-ip-from-mmdb.py"
+MAINLAND_SCRIPT_DIR="/usr/local/share/ss-2022"
 
 # 安装全局命令
 install_global_command() {
@@ -291,6 +296,26 @@ manage_ss_rust() {
     bash <(curl -sL https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/ss-2022.sh)
 }
 
+# 管理中国大陆IP屏蔽
+manage_mainland_block() {
+    echo -e "${CYAN}正在从仓库获取大陆IP屏蔽脚本...${RESET}"
+
+    mkdir -p "${MAINLAND_SCRIPT_DIR}"
+
+    if ! curl -fL -s "${MAINLAND_BLOCK_URL}" -o "${MAINLAND_SCRIPT_DIR}/block-mainland.sh"; then
+        echo -e "${RED}下载 block-mainland.sh 失败${RESET}"
+        return 1
+    fi
+
+    if ! curl -fL -s "${MAINLAND_EXTRACT_URL}" -o "${MAINLAND_SCRIPT_DIR}/extract-cn-ip-from-mmdb.py"; then
+        echo -e "${RED}下载 extract-cn-ip-from-mmdb.py 失败${RESET}"
+        return 1
+    fi
+
+    chmod +x "${MAINLAND_SCRIPT_DIR}/block-mainland.sh" "${MAINLAND_SCRIPT_DIR}/extract-cn-ip-from-mmdb.py"
+    PYTHONIOENCODING=UTF-8 bash "${MAINLAND_SCRIPT_DIR}/block-mainland.sh"
+}
+
 # 安装/管理 ShadowTLS
 manage_shadowtls() {
     bash <(curl -sL https://raw.githubusercontent.com/jinqians/snell.sh/main/shadowtls.sh)
@@ -405,14 +430,15 @@ show_menu() {
     echo -e "\n${YELLOW}=== 系统功能 ===${RESET}"
     echo -e "${GREEN}8.${RESET} 更新脚本"
     echo -e "${GREEN}9.${RESET} 流量管理(请勿使用，功能不完善)"
+    echo -e "${GREEN}10.${RESET} 中国大陆屏蔽管理(ss-2022)"
     echo -e "${GREEN}0.${RESET} 退出"
     
     echo -e "${CYAN}============================================${RESET}"
 
-    echo -e "${GREEN}退出脚本后，输入menu可进入脚本{RESET}"
+    echo -e "${GREEN}退出脚本后，输入menu可进入脚本${RESET}"
 
     echo -e "${CYAN}============================================${RESET}"
-    read -rp "请输入选项 [0-8]: " num
+    read -rp "请输入选项 [0-10]: " num
 }
 
 # 初始检查
@@ -452,12 +478,18 @@ while true; do
             bash <(curl -sL https://raw.githubusercontent.com/jinqians/snell.sh/main/traffic.sh)
             read -p "按任意键继续..."
             ;;
+        10)
+            if ! manage_mainland_block; then
+                echo -e "${YELLOW}请检查仓库地址或网络连接后重试${RESET}"
+                read -p "按任意键继续..."
+            fi
+            ;;
         0)
             echo -e "${GREEN}感谢使用，再见！${RESET}"
             exit 0
             ;;
         *)
-            echo -e "${RED}请输入正确的选项 [0-9]${RESET}"
+            echo -e "${RED}请输入正确的选项 [0-10]${RESET}"
             ;;
     esac
     echo -e "\n${CYAN}按任意键返回主菜单...${RESET}"
