@@ -14,6 +14,7 @@ SCRIPT_VERSION="1.0"
 SCRIPT_PATH=$(cd "$(dirname "$0")"; pwd)
 SCRIPT_DIR=$(dirname "${SCRIPT_PATH}")
 SCRIPT_NAME=$(basename "$0")
+SCRIPT_FULL_PATH="$(cd "$(dirname "$0")"; pwd)/$(basename "$0")"
 
 # 配置路径
 INSTALL_DIR="/etc/ss-rust"
@@ -23,6 +24,10 @@ MAINLAND_IP_FILE="${IPLIST_DIR}/mainland_cn.txt"
 MMDB_FILE="${IPLIST_DIR}/Country.mmdb"
 IPTABLES_RULES="/etc/ss-rust/mainland_cn_rules.sh"
 EXTRACT_SCRIPT="$(cd "$(dirname "$0")"; pwd)/extract-cn-ip-from-mmdb.py"
+AUTO_UPDATE_CRON_FILE="/etc/cron.d/block-mainland-auto-update"
+AUTO_UPDATE_LOG_FILE="/var/log/block-mainland-update.log"
+DAILY_CRON_EXPR="30 4 * * *"
+WEEKLY_CRON_EXPR="30 4 * * 1"
 
 # 颜色定义
 readonly RED='\033[0;31m'
@@ -490,6 +495,156 @@ update_ip_list() {
     echo -e "${SUCCESS} IP列表更新完成"
 }
 
+# 获取用于定时任务调用的脚本路径
+get_script_exec_path() {
+    if [ -x "/usr/local/bin/block-mainland.sh" ]; then
+        echo "/usr/local/bin/block-mainland.sh"
+    else
+        echo "$SCRIPT_FULL_PATH"
+    fi
+}
+
+# 校验cron表达式（仅校验字段数）
+is_valid_cron_expr() {
+    local expr="$1"
+    expr=$(echo "$expr" | awk '{$1=$1; print}')
+
+    if [ -z "$expr" ]; then
+        return 1
+    fi
+
+    [ "$(echo "$expr" | awk '{print NF}')" -eq 5 ]
+}
+
+# 规范化输入的计划类型
+normalize_schedule_input() {
+    local input="$1"
+
+    case "$input" in
+        daily)
+            echo "$DAILY_CRON_EXPR"
+            ;;
+        weekly)
+            echo "$WEEKLY_CRON_EXPR"
+            ;;
+        *)
+            echo "$input"
+            ;;
+    esac
+}
+
+# 尝试确保系统的cron服务可用
+ensure_cron_service() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if systemctl list-unit-files 2>/dev/null | grep -q '^cron.service'; then
+        systemctl enable --now cron >/dev/null 2>&1 || true
+    elif systemctl list-unit-files 2>/dev/null | grep -q '^crond.service'; then
+        systemctl enable --now crond >/dev/null 2>&1 || true
+    fi
+}
+
+# 开启定时更新
+enable_auto_update() {
+    local schedule_input="$1"
+    local cron_expr=""
+
+    if [ -n "$schedule_input" ]; then
+        cron_expr=$(normalize_schedule_input "$schedule_input")
+        if ! is_valid_cron_expr "$cron_expr"; then
+            echo -e "${ERROR} 无效的cron表达式: $schedule_input"
+            echo -e "${INFO} 示例: '30 4 * * *'"
+            return 1
+        fi
+    else
+        echo -e "${INFO} 请选择定时更新频率:"
+        echo "  1) 每日 04:30"
+        echo "  2) 每周一 04:30"
+        echo "  3) 自定义 cron 表达式"
+        read -p "请选择 [1-3] (默认: 1): " schedule_choice
+        [ -z "$schedule_choice" ] && schedule_choice="1"
+
+        case "$schedule_choice" in
+            1)
+                cron_expr="$DAILY_CRON_EXPR"
+                ;;
+            2)
+                cron_expr="$WEEKLY_CRON_EXPR"
+                ;;
+            3)
+                read -p "请输入 cron 表达式(5段，如: 30 4 * * *): " custom_expr
+                if ! is_valid_cron_expr "$custom_expr"; then
+                    echo -e "${ERROR} cron表达式格式无效"
+                    return 1
+                fi
+                cron_expr="$custom_expr"
+                ;;
+            *)
+                echo -e "${ERROR} 无效选项"
+                return 1
+                ;;
+        esac
+    fi
+
+    ensure_cron_service
+
+    local script_exec_path
+    script_exec_path=$(get_script_exec_path)
+
+    touch "$AUTO_UPDATE_LOG_FILE"
+
+    cat > "$AUTO_UPDATE_CRON_FILE" << EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+$cron_expr root PYTHONIOENCODING=UTF-8 LC_ALL=C.UTF-8 LANG=C.UTF-8 bash $script_exec_path update >> $AUTO_UPDATE_LOG_FILE 2>&1
+EOF
+
+    chmod 644 "$AUTO_UPDATE_CRON_FILE"
+
+    echo -e "${SUCCESS} 定时更新已开启"
+    echo -e "${INFO} 更新频率: $cron_expr"
+    echo -e "${INFO} 日志文件: $AUTO_UPDATE_LOG_FILE"
+}
+
+# 关闭定时更新
+disable_auto_update() {
+    if [ -f "$AUTO_UPDATE_CRON_FILE" ]; then
+        rm -f "$AUTO_UPDATE_CRON_FILE"
+        echo -e "${SUCCESS} 定时更新已关闭"
+    else
+        echo -e "${WARNING} 定时更新未启用"
+    fi
+}
+
+# 查看定时更新状态
+show_auto_update_status() {
+    echo -e "${BLUE}${BOLD}═══════════════════════════════════${PLAIN}"
+    echo -e "${BLUE}${BOLD}      定时更新任务状态${PLAIN}"
+    echo -e "${BLUE}${BOLD}═══════════════════════════════════${PLAIN}"
+
+    if [ -f "$AUTO_UPDATE_CRON_FILE" ]; then
+        local cron_line
+        cron_line=$(grep -vE '^(#|SHELL=|PATH=|$)' "$AUTO_UPDATE_CRON_FILE" | head -1)
+        local cron_expr
+        cron_expr=$(echo "$cron_line" | awk '{print $1" "$2" "$3" "$4" "$5}')
+
+        echo -e "${GREEN}✓${PLAIN} 已启用"
+        echo -e "  调度表达式: $cron_expr"
+        echo -e "  任务文件: $AUTO_UPDATE_CRON_FILE"
+    else
+        echo -e "${RED}✗${PLAIN} 未启用"
+    fi
+
+    if [ -f "$AUTO_UPDATE_LOG_FILE" ]; then
+        echo -e "  日志文件: $AUTO_UPDATE_LOG_FILE"
+        echo -e "  日志大小: $(du -h "$AUTO_UPDATE_LOG_FILE" | cut -f1)"
+    fi
+
+    echo -e "${BLUE}${BOLD}═══════════════════════════════════${PLAIN}"
+}
+
 # 显示菜单
 show_menu() {
     echo ""
@@ -502,6 +657,9 @@ show_menu() {
     echo -e "  ${BOLD}3.${PLAIN} 禁用屏蔽规则"
     echo -e "  ${BOLD}4.${PLAIN} 更新IP列表"
     echo -e "  ${BOLD}5.${PLAIN} 查看规则状态"
+    echo -e "  ${BOLD}6.${PLAIN} 开启定时更新"
+    echo -e "  ${BOLD}7.${PLAIN} 关闭定时更新"
+    echo -e "  ${BOLD}8.${PLAIN} 查看定时更新状态"
 
     echo -e "  ${BOLD}0.${PLAIN} 退出"
     echo ""
@@ -532,11 +690,24 @@ main() {
                 update_ip_list
                 show_status
                 ;;
+            auto-update-enable)
+                check_dependencies
+                create_directories
+                enable_auto_update "$2"
+                show_auto_update_status
+                ;;
+            auto-update-disable)
+                disable_auto_update
+                show_auto_update_status
+                ;;
+            auto-update-status)
+                show_auto_update_status
+                ;;
             status)
                 show_status
                 ;;
             *)
-                echo "用法: $SCRIPT_NAME [enable|disable|update|status]"
+                echo "用法: $SCRIPT_NAME [enable|disable|update|status|auto-update-enable [daily|weekly|\"cron\"]|auto-update-disable|auto-update-status]"
                 exit 1
                 ;;
         esac
@@ -546,7 +717,7 @@ main() {
     # 交互式菜单
     while true; do
         show_menu
-        read -p "请选择操作 [0-5]: " choice
+        read -p "请选择操作 [0-8]: " choice
         
         case $choice in
             1)
@@ -574,6 +745,19 @@ main() {
                 ;;
             5)
                 show_status
+                ;;
+            6)
+                check_dependencies
+                create_directories
+                enable_auto_update
+                show_auto_update_status
+                ;;
+            7)
+                disable_auto_update
+                show_auto_update_status
+                ;;
+            8)
+                show_auto_update_status
                 ;;
             0)
                 echo -e "${INFO} 退出脚本"
