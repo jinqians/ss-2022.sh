@@ -20,6 +20,86 @@ current_version="3.1"
 MAINLAND_BLOCK_URL="https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/block-mainland.sh"
 MAINLAND_EXTRACT_URL="https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/extract-cn-ip-from-mmdb.py"
 MAINLAND_SCRIPT_DIR="/usr/local/share/ss-2022"
+SERVICE_MANAGER=""
+SERVICE_DIR="/etc/systemd/system"
+SERVICE_SUFFIX=".service"
+
+detect_service_manager() {
+    if command -v systemctl >/dev/null 2>&1; then
+        SERVICE_MANAGER="systemd"
+        SERVICE_DIR="/etc/systemd/system"
+        SERVICE_SUFFIX=".service"
+    elif command -v rc-service >/dev/null 2>&1; then
+        SERVICE_MANAGER="openrc"
+        SERVICE_DIR="/etc/init.d"
+        SERVICE_SUFFIX=""
+    else
+        SERVICE_MANAGER=""
+    fi
+}
+
+get_service_path() {
+    local service_name="$1"
+    echo "${SERVICE_DIR}/${service_name}${SERVICE_SUFFIX}"
+}
+
+service_name_from_file() {
+    local name="${1##*/}"
+    if [ -n "$SERVICE_SUFFIX" ]; then
+        name="${name%$SERVICE_SUFFIX}"
+    fi
+    echo "$name"
+}
+
+service_is_active() {
+    local service_name="$1"
+    if [ "$SERVICE_MANAGER" = "openrc" ]; then
+        rc-service "$service_name" status >/dev/null 2>&1
+    elif [ "$SERVICE_MANAGER" = "systemd" ]; then
+        systemctl is-active --quiet "$service_name"
+    else
+        return 1
+    fi
+}
+
+stop_disable_service() {
+    local service_name="$1"
+    if [ "$SERVICE_MANAGER" = "openrc" ]; then
+        rc-service "$service_name" stop 2>/dev/null || true
+        rc-update del "$service_name" default 2>/dev/null || true
+    elif [ "$SERVICE_MANAGER" = "systemd" ]; then
+        systemctl stop "$service_name" 2>/dev/null || true
+        systemctl disable "$service_name" 2>/dev/null || true
+    fi
+}
+
+reload_service_manager() {
+    if [ "$SERVICE_MANAGER" = "systemd" ]; then
+        systemctl daemon-reload
+    fi
+}
+
+get_service_pid() {
+    local service_name="$1"
+    if [ "$SERVICE_MANAGER" = "systemd" ]; then
+        systemctl show -p MainPID "$service_name" 2>/dev/null | cut -d'=' -f2
+    elif [ -f "/run/${service_name}.pid" ]; then
+        cat "/run/${service_name}.pid"
+    else
+        pgrep -f "$service_name" 2>/dev/null | head -1
+    fi
+}
+
+list_shadowtls_services() {
+    if [ "$SERVICE_MANAGER" = "systemd" ]; then
+        systemctl list-units --type=service --all --no-legend 2>/dev/null | grep "shadowtls-" | awk '{print $1}' | sed 's/\.service$//'
+    else
+        for service_file in "$SERVICE_DIR"/shadowtls-*; do
+            [ -f "$service_file" ] || continue
+            service_name_from_file "$service_file"
+        done
+    fi
+}
 
 # 安装全局命令
 install_global_command() {
@@ -67,6 +147,14 @@ check_dependencies() {
                 if ! command -v "$dep" &> /dev/null; then
                     echo -e "${CYAN}正在安装 ${dep}...${RESET}"
                     yum install -y "$dep"
+                fi
+            done
+        elif [ -x "$(command -v apk)" ]; then
+            apk update
+            for dep in "${deps[@]}"; do
+                if ! command -v "$dep" &> /dev/null; then
+                    echo -e "${CYAN}正在安装 ${dep}...${RESET}"
+                    apk add --no-cache "$dep"
                 fi
             done
         else
@@ -124,11 +212,11 @@ check_and_show_status() {
         local total_snell_cpu=0
         
         # 检查主服务状态
-        if systemctl is-active snell &> /dev/null; then
+        if service_is_active snell; then
             user_count=$((user_count + 1))
             running_count=$((running_count + 1))
-            
-            local main_pid=$(systemctl show -p MainPID snell | cut -d'=' -f2)
+
+            local main_pid=$(get_service_pid snell)
             if [ ! -z "$main_pid" ] && [ "$main_pid" != "0" ]; then
                 local mem=$(ps -o rss= -p $main_pid 2>/dev/null || echo 0)
                 local cpu=$(get_cpu_usage "$main_pid")
@@ -148,10 +236,10 @@ check_and_show_status() {
                     local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*::0:\([0-9]*\)/\1/p')
                     if [ ! -z "$port" ]; then
                         user_count=$((user_count + 1))
-                        if systemctl is-active --quiet "snell-${port}"; then
+                        if service_is_active "snell-${port}"; then
                             running_count=$((running_count + 1))
-                            
-                            local user_pid=$(systemctl show -p MainPID "snell-${port}" | cut -d'=' -f2)
+
+                            local user_pid=$(get_service_pid "snell-${port}")
                             if [ ! -z "$user_pid" ] && [ "$user_pid" != "0" ]; then
                                 local mem=$(ps -o rss= -p $user_pid 2>/dev/null || echo 0)
                                 local cpu=$(get_cpu_usage "$user_pid")
@@ -182,9 +270,9 @@ check_and_show_status() {
         local ss_cpu=0
         local ss_running=0
         
-        if systemctl is-active ss-rust &> /dev/null; then
+        if service_is_active ss-rust; then
             ss_running=1
-            local ss_pid=$(systemctl show -p MainPID ss-rust | cut -d'=' -f2)
+            local ss_pid=$(get_service_pid ss-rust)
             if [ ! -z "$ss_pid" ] && [ "$ss_pid" != "0" ]; then
                 ss_memory=$(ps -o rss= -p $ss_pid 2>/dev/null || echo 0)
                 ss_cpu=$(get_cpu_usage "$ss_pid")
@@ -198,18 +286,21 @@ check_and_show_status() {
     fi
     
     # 检查 ShadowTLS 状态
-    if systemctl list-units --type=service | grep -q "shadowtls-"; then
+    local shadowtls_services
+    shadowtls_services=$(list_shadowtls_services)
+    if [ -n "$shadowtls_services" ]; then
         local stls_total=0
         local stls_running=0
         local total_stls_memory=0
         local total_stls_cpu=0
-        
+
         while IFS= read -r service; do
+            [ -z "$service" ] && continue
             stls_total=$((stls_total + 1))
-            if systemctl is-active "$service" &> /dev/null; then
+            if service_is_active "$service"; then
                 stls_running=$((stls_running + 1))
-                
-                local stls_pid=$(systemctl show -p MainPID "$service" | cut -d'=' -f2)
+
+                local stls_pid=$(get_service_pid "$service")
                 if [ ! -z "$stls_pid" ] && [ "$stls_pid" != "0" ]; then
                     local mem=$(ps -o rss= -p $stls_pid 2>/dev/null || echo 0)
                     local cpu=$(get_cpu_usage "$stls_pid")
@@ -217,8 +308,8 @@ check_and_show_status() {
                     total_stls_cpu=$(echo "$total_stls_cpu + $cpu" | bc -l)
                 fi
             fi
-        done < <(systemctl list-units --type=service --all --no-legend | grep "shadowtls-" | awk '{print $1}')
-        
+        done <<< "$shadowtls_services"
+
         if [ $stls_total -gt 0 ]; then
             local total_stls_memory_mb=$(echo "scale=2; $total_stls_memory/1024" | bc)
             printf "${GREEN}ShadowTLS 已安装${RESET}  ${YELLOW}CPU：%.2f%% (每核)${RESET}  ${YELLOW}内存：%.2f MB${RESET}  ${GREEN}运行中：${stls_running}/${stls_total}${RESET}\n" "$total_stls_cpu" "$total_stls_memory_mb"
@@ -318,7 +409,7 @@ manage_mainland_block() {
 
 # 安装/管理 ShadowTLS
 manage_shadowtls() {
-    bash <(curl -sL https://raw.githubusercontent.com/jinqians/snell.sh/main/shadowtls.sh)
+    bash <(curl -sL https://raw.githubusercontent.com/jinqians/ss-2022.sh/main/shadowtls.sh)
 }
 
 # 安装/管理 VLESS Reality
@@ -331,8 +422,7 @@ uninstall_snell() {
     echo -e "${CYAN}正在卸载 Snell${RESET}"
 
     # 停止并禁用主服务
-    systemctl stop snell
-    systemctl disable snell
+    stop_disable_service snell
 
     # 停止并禁用所有多用户服务
     if [ -d "/etc/snell/users" ]; then
@@ -341,25 +431,23 @@ uninstall_snell() {
                 local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*::0:\([0-9]*\)/\1/p')
                 if [ ! -z "$port" ]; then
                     echo -e "${YELLOW}正在停止用户服务 (端口: $port)${RESET}"
-                    systemctl stop "snell-${port}" 2>/dev/null
-                    systemctl disable "snell-${port}" 2>/dev/null
-                    rm -f "${SYSTEMD_DIR}/snell-${port}.service"
+                    stop_disable_service "snell-${port}"
+                    rm -f "$(get_service_path "snell-${port}")"
                 fi
             fi
         done
     fi
 
     # 删除服务文件
-    rm -f "/lib/systemd/system/${service_name}.service"
-    rm -f "${SYSTEMD_DIR}/snell.service"
+    rm -f "$(get_service_path snell)"
 
     # 删除可执行文件和配置目录
     rm -f /usr/local/bin/snell-server
     rm -rf /etc/snell
     rm -f /usr/local/bin/snell  # 删除管理脚本
     
-    # 重载 systemd 配置
-    systemctl daemon-reload
+    # 重载服务配置
+    reload_service_manager
     
     echo -e "${GREEN}Snell 及其所有多用户配置已成功卸载${RESET}"
 }
@@ -369,16 +457,15 @@ uninstall_ss_rust() {
     echo -e "${CYAN}正在卸载 SS-2022...${RESET}"
     
     # 停止并禁用服务
-    systemctl stop ss-rust 2>/dev/null
-    systemctl disable ss-rust 2>/dev/null
-    rm -f "/etc/systemd/system/ss-rust.service"
+    stop_disable_service ss-rust
+    rm -f "$(get_service_path ss-rust)"
     
     # 删除二进制文件和配置目录
     rm -f "/usr/local/bin/ss-rust"
     rm -rf "/etc/ss-rust"
     
-    # 重新加载 systemd
-    systemctl daemon-reload
+    # 重新加载服务配置
+    reload_service_manager
     
     echo -e "${GREEN}SS-2022 卸载完成！${RESET}"
 }
@@ -389,16 +476,16 @@ uninstall_shadowtls() {
     
     # 停止并禁用所有 ShadowTLS 服务
     while IFS= read -r service; do
-        systemctl stop "$service" 2>/dev/null
-        systemctl disable "$service" 2>/dev/null
-        rm -f "/etc/systemd/system/${service}"
-    done < <(systemctl list-units --type=service --all --no-legend | grep "shadowtls-" | awk '{print $1}')
+        [ -z "$service" ] && continue
+        stop_disable_service "$service"
+        rm -f "$(get_service_path "$service")"
+    done < <(list_shadowtls_services)
     
     # 删除二进制文件
     rm -f "/usr/local/bin/shadow-tls"
     
-    # 重新加载 systemd
-    systemctl daemon-reload
+    # 重新加载服务配置
+    reload_service_manager
     
     echo -e "${GREEN}ShadowTLS 卸载完成！${RESET}"
 }
@@ -443,6 +530,7 @@ show_menu() {
 
 # 初始检查
 check_root
+detect_service_manager
 check_dependencies
 install_global_command
 

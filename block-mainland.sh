@@ -24,7 +24,11 @@ MAINLAND_IP_FILE="${IPLIST_DIR}/mainland_cn.txt"
 MMDB_FILE="${IPLIST_DIR}/Country.mmdb"
 IPTABLES_RULES="/etc/ss-rust/mainland_cn_rules.sh"
 EXTRACT_SCRIPT="$(cd "$(dirname "$0")"; pwd)/extract-cn-ip-from-mmdb.py"
-AUTO_UPDATE_CRON_FILE="/etc/cron.d/block-mainland-auto-update"
+if [ -d /etc/cron.d ]; then
+    AUTO_UPDATE_CRON_FILE="/etc/cron.d/block-mainland-auto-update"
+else
+    AUTO_UPDATE_CRON_FILE="/etc/crontabs/root"
+fi
 AUTO_UPDATE_LOG_FILE="/var/log/block-mainland-update.log"
 DAILY_CRON_EXPR="30 4 * * *"
 WEEKLY_CRON_EXPR="30 4 * * 1"
@@ -74,6 +78,9 @@ check_dependencies() {
             apt-get install -y "${missing_deps[@]}"
         elif command -v yum &> /dev/null; then
             yum install -y "${missing_deps[@]}"
+        elif command -v apk &> /dev/null; then
+            apk update
+            apk add --no-cache "${missing_deps[@]}"
         else
             echo -e "${ERROR} 无法自动安装依赖，请手动安装后重试"
             exit 1
@@ -88,6 +95,8 @@ check_dependencies() {
             apt-get install -y python3-pip
         elif command -v yum &> /dev/null; then
             yum install -y python3-pip
+        elif command -v apk &> /dev/null; then
+            apk add --no-cache py3-pip
         fi
     fi
     
@@ -110,8 +119,11 @@ check_dependencies() {
         elif command -v yum &> /dev/null; then
             echo -e "${INFO} 安装编译依赖..."
             yum install -y python3-devel gcc 2>/dev/null || true
+        elif command -v apk &> /dev/null; then
+            echo -e "${INFO} 安装编译依赖..."
+            apk add --no-cache python3-dev build-base 2>/dev/null || true
         fi
-        
+
         # 用pip安装，添加--break-system-packages标志（用于Debian系统）
         echo -e "${INFO} 安装maxminddb库..."
         python3 -m pip install --break-system-packages maxminddb 2>&1 | tail -5 && echo -e "${SUCCESS} maxminddb库安装成功" || echo -e "${WARNING} maxminddb库安装可能失败，请手动检查Python环境"
@@ -383,6 +395,8 @@ install_ipset() {
             apt-get install -y ipset
         elif command -v yum &> /dev/null; then
             yum install -y ipset
+        elif command -v apk &> /dev/null; then
+            apk add --no-cache ipset
         fi
     fi
     
@@ -403,7 +417,11 @@ enable_blocking() {
     
     # 保存iptables规则（使用iptables-save/iptables-restore）
     if command -v iptables-save &> /dev/null; then
-        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+        if [ -d /etc/iptables ]; then
+            iptables-save > /etc/iptables/rules.v4 2>/dev/null || iptables-save > /etc/iptables/rules-save 2>/dev/null || true
+        else
+            iptables-save > /etc/iptables.rules 2>/dev/null || true
+        fi
     fi
     
     echo -e "${SUCCESS} 屏蔽规则已启用"
@@ -535,14 +553,15 @@ normalize_schedule_input() {
 
 # 尝试确保系统的cron服务可用
 ensure_cron_service() {
-    if ! command -v systemctl >/dev/null 2>&1; then
-        return 0
-    fi
-
-    if systemctl list-unit-files 2>/dev/null | grep -q '^cron.service'; then
-        systemctl enable --now cron >/dev/null 2>&1 || true
-    elif systemctl list-unit-files 2>/dev/null | grep -q '^crond.service'; then
-        systemctl enable --now crond >/dev/null 2>&1 || true
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl list-unit-files 2>/dev/null | grep -q '^cron.service'; then
+            systemctl enable --now cron >/dev/null 2>&1 || true
+        elif systemctl list-unit-files 2>/dev/null | grep -q '^crond.service'; then
+            systemctl enable --now crond >/dev/null 2>&1 || true
+        fi
+    elif command -v rc-service >/dev/null 2>&1; then
+        rc-update add crond default >/dev/null 2>&1 || true
+        rc-service crond start >/dev/null 2>&1 || true
     fi
 }
 
@@ -595,11 +614,20 @@ enable_auto_update() {
 
     touch "$AUTO_UPDATE_LOG_FILE"
 
-    cat > "$AUTO_UPDATE_CRON_FILE" << EOF
+    if [ -d /etc/cron.d ]; then
+        cat > "$AUTO_UPDATE_CRON_FILE" << EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 $cron_expr root PYTHONIOENCODING=UTF-8 LC_ALL=C.UTF-8 LANG=C.UTF-8 bash $script_exec_path update >> $AUTO_UPDATE_LOG_FILE 2>&1
 EOF
+    else
+        local cron_cmd="$cron_expr PYTHONIOENCODING=UTF-8 LC_ALL=C.UTF-8 LANG=C.UTF-8 bash $script_exec_path update >> $AUTO_UPDATE_LOG_FILE 2>&1"
+        mkdir -p "$(dirname "$AUTO_UPDATE_CRON_FILE")"
+        touch "$AUTO_UPDATE_CRON_FILE"
+        grep -vF "bash $script_exec_path update" "$AUTO_UPDATE_CRON_FILE" > "${AUTO_UPDATE_CRON_FILE}.tmp" 2>/dev/null || true
+        printf '%s\n' "$cron_cmd" >> "${AUTO_UPDATE_CRON_FILE}.tmp"
+        mv "${AUTO_UPDATE_CRON_FILE}.tmp" "$AUTO_UPDATE_CRON_FILE"
+    fi
 
     chmod 644 "$AUTO_UPDATE_CRON_FILE"
 
@@ -611,7 +639,14 @@ EOF
 # 关闭定时更新
 disable_auto_update() {
     if [ -f "$AUTO_UPDATE_CRON_FILE" ]; then
-        rm -f "$AUTO_UPDATE_CRON_FILE"
+        if [ -d /etc/cron.d ]; then
+            rm -f "$AUTO_UPDATE_CRON_FILE"
+        else
+            local script_exec_path
+            script_exec_path=$(get_script_exec_path)
+            grep -vF "bash $script_exec_path update" "$AUTO_UPDATE_CRON_FILE" > "${AUTO_UPDATE_CRON_FILE}.tmp" 2>/dev/null || true
+            mv "${AUTO_UPDATE_CRON_FILE}.tmp" "$AUTO_UPDATE_CRON_FILE"
+        fi
         echo -e "${SUCCESS} 定时更新已关闭"
     else
         echo -e "${WARNING} 定时更新未启用"
@@ -625,14 +660,24 @@ show_auto_update_status() {
     echo -e "${BLUE}${BOLD}═══════════════════════════════════${PLAIN}"
 
     if [ -f "$AUTO_UPDATE_CRON_FILE" ]; then
+        local script_exec_path
+        script_exec_path=$(get_script_exec_path)
         local cron_line
-        cron_line=$(grep -vE '^(#|SHELL=|PATH=|$)' "$AUTO_UPDATE_CRON_FILE" | head -1)
+        if [ -d /etc/cron.d ]; then
+            cron_line=$(grep -vE '^(#|SHELL=|PATH=|$)' "$AUTO_UPDATE_CRON_FILE" | head -1)
+        else
+            cron_line=$(grep -F "bash $script_exec_path update" "$AUTO_UPDATE_CRON_FILE" | head -1)
+        fi
         local cron_expr
         cron_expr=$(echo "$cron_line" | awk '{print $1" "$2" "$3" "$4" "$5}')
 
-        echo -e "${GREEN}✓${PLAIN} 已启用"
-        echo -e "  调度表达式: $cron_expr"
-        echo -e "  任务文件: $AUTO_UPDATE_CRON_FILE"
+        if [ -n "$cron_line" ]; then
+            echo -e "${GREEN}✓${PLAIN} 已启用"
+            echo -e "  调度表达式: $cron_expr"
+            echo -e "  任务文件: $AUTO_UPDATE_CRON_FILE"
+        else
+            echo -e "${RED}✗${PLAIN} 未启用"
+        fi
     else
         echo -e "${RED}✗${PLAIN} 未启用"
     fi
