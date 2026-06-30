@@ -92,6 +92,50 @@ wget -N --no-check-certificate https://raw.githubusercontent.com/jinqians/ss-202
 - 生成配置二维码
 - 支持 IPv4/IPv6 地址
 
+## 流量管理
+
+<details>
+   <summary>流量管理说明[展开查看]</summary>
+
+### 功能说明
+通过 iptables 对 SS2022 节点进行流量计数，支持设置月度流量上限，超限后自动暂停节点，每月指定日期自动重置。
+
+### 计量原理
+SS2022 监听在指定端口（TCP + UDP），流量管理通过在 iptables 中添加专用计数规则（`PSM_TRF` 链）统计该端口的进出字节数，不影响数据包的正常转发。超限时向 `INPUT` 链插入 DROP 规则，阻断新连接。
+
+```
+客户端 ──TCP/UDP──▶ iptables 计数 ──▶ ss-rust
+                         │
+                       超限时 DROP
+```
+
+### 使用方式
+在管理菜单中选择 **9. 流量管理**，按提示安装并使用 PSM：
+
+```bash
+bash <(curl -fsSL https://psm.jinqians.com)
+```
+
+进入 PSM 后选择 **15. 流量管理** → **添加节点** → 选择 SS2022，设置流量上限（GB）和每月重置日。
+
+### 自动检查定时器
+首次配置后会提示安装 systemd 定时器（`psm-traffic.timer`），每分钟执行一次检查：
+- 累计流量 ≥ 限额 → 自动暂停节点（TCP + UDP 同时阻断）
+- 到达重置日 → 清零计数并恢复节点
+
+手动查看定时器状态：
+```bash
+systemctl status psm-traffic.timer
+```
+
+### 注意事项
+- 流量计数基于 iptables 字节计数器，**服务器重启后计数器归零**，但已累计的流量数据保存在 `/etc/psm/traffic/state.json` 中，下次计数从断点续计
+- SS2022 同时使用 TCP 和 UDP，两种协议均会被计入流量并在超限时一同暂停
+- 暂停节点仅阻断**新连接**，已建立的连接会在自然断开后失效
+- 若系统使用 nftables，需确认 iptables 兼容层已启用（`iptables-legacy` 或 `iptables-nft`）
+
+</details>
+
 ## 注意事项
 
 1. 安装 ShadowTLS 之前需要先安装 Shadowsocks Rust
