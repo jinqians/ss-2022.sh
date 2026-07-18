@@ -1,7 +1,7 @@
 #!/bin/bash
 # =========================================
 # 作者: jinqians
-# 日期: 2025年3月16
+# 日期: 2026年7月18
 # 网站：jinqians.com
 # 描述: 这个脚本用于安装和管理 ShadowTLS V3
 # =========================================
@@ -32,10 +32,37 @@ check_root() {
     fi
 }
 
-# 安装必要的工具
+# 安装必要的工具（兼容 Debian/Ubuntu 与 RHEL 系）
 install_requirements() {
-    apt update
-    apt install -y wget curl jq
+    if command -v apt >/dev/null 2>&1; then
+        apt update
+        apt install -y wget curl jq qrencode
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y epel-release 2>/dev/null || true
+        dnf install -y wget curl jq qrencode
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y epel-release 2>/dev/null || true
+        yum install -y wget curl jq qrencode
+    else
+        echo -e "${YELLOW}未识别的包管理器，跳过依赖安装，请确保已安装 wget/curl/jq${RESET}"
+    fi
+}
+
+# ShadowTLS 监听地址：有 IPv4 时监听 0.0.0.0（部分环境绑定 ::0 不接受 IPv4 连接），纯 IPv6 机器监听 ::0
+get_listen_address() {
+    if ip -4 addr show scope global 2>/dev/null | grep -q "inet "; then
+        echo "0.0.0.0"
+    else
+        echo "::0"
+    fi
+}
+
+# 从 service 文件解析 ShadowTLS 监听端口（兼容任意监听地址，如 ::0 / 0.0.0.0 / 手动修改过的地址）
+get_stls_listen_port() {
+    local service_file=$1
+    local listen_addr
+    listen_addr=$(grep -oP '(?<=--listen )\S+' "$service_file" 2>/dev/null | head -1)
+    echo "${listen_addr##*:}"
 }
 
 # 获取最新版本
@@ -94,10 +121,10 @@ get_ssrust_method() {
     echo "$method"
 }
 
-# 获取 Snell 端口
+# 获取 Snell 端口（兼容 ::0:port / 0.0.0.0:port 等任意监听地址格式）
 get_snell_port() {
     if [ -f "${SNELL_CONF_FILE}" ]; then
-        grep -E '^listen' "${SNELL_CONF_FILE}" | sed -n 's/.*::0:\([0-9]*\)/\1/p'
+        grep -E '^listen' "${SNELL_CONF_FILE}" | sed -n 's/.*:\([0-9][0-9]*\)[[:space:]]*$/\1/p'
     fi
 }
 
@@ -133,7 +160,7 @@ get_all_snell_users() {
     local main_port=""
     local main_psk=""
     if [ -f "${SNELL_CONF_FILE}" ]; then
-        main_port=$(grep -E '^listen' "${SNELL_CONF_FILE}" | sed -n 's/.*::0:\([0-9]*\)/\1/p')
+        main_port=$(grep -E '^listen' "${SNELL_CONF_FILE}" | sed -n 's/.*:\([0-9][0-9]*\)[[:space:]]*$/\1/p')
         main_psk=$(grep -E '^psk' "${SNELL_CONF_FILE}" | awk -F'=' '{print $2}' | tr -d ' ')
         if [ ! -z "$main_port" ] && [ ! -z "$main_psk" ]; then
             echo "${main_port}|${main_psk}"
@@ -143,7 +170,7 @@ get_all_snell_users() {
     # 获取其他用户配置
     for user_conf in "${USERS_DIR}"/snell-*.conf; do
         if [ -f "$user_conf" ] && [[ "$user_conf" != *"snell-main.conf" ]]; then
-            local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*::0:\([0-9]*\)/\1/p')
+            local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*:\([0-9][0-9]*\)[[:space:]]*$/\1/p')
             local psk=$(grep -E '^psk' "$user_conf" | awk -F'=' '{print $2}' | tr -d ' ')
             if [ ! -z "$port" ] && [ ! -z "$psk" ]; then
                 echo "${port}|${psk}"
@@ -237,17 +264,17 @@ get_used_stls_ports() {
     # 检查 SS 服务
     local ss_service="${SYSTEMD_DIR}/shadowtls-ss.service"
     if [ -f "$ss_service" ]; then
-        local ss_port=$(grep -oP '(?<=--listen ::0:)\d+' "$ss_service")
+        local ss_port=$(get_stls_listen_port "$ss_service")
         if [ ! -z "$ss_port" ]; then
             used_ports+=("$ss_port")
         fi
     fi
-    
+
     # 检查 Snell 服务
     local snell_services=$(find /etc/systemd/system -name "shadowtls-snell-*.service" 2>/dev/null)
     if [ ! -z "$snell_services" ]; then
         while IFS= read -r service_file; do
-            local port=$(grep -oP '(?<=--listen ::0:)\d+' "$service_file")
+            local port=$(get_stls_listen_port "$service_file")
             if [ ! -z "$port" ]; then
                 used_ports+=("$port")
             fi
@@ -446,7 +473,7 @@ User=root
 Group=root
 Environment=RUST_BACKTRACE=1
 Environment=RUST_LOG=info
-ExecStart=/usr/local/bin/shadow-tls --v3 server --listen ::0:${listen_port} --server 127.0.0.1:${port} --tls ${tls_domain} --password ${password}
+ExecStart=/usr/local/bin/shadow-tls --v3 server --listen $(get_listen_address):${listen_port} --server 127.0.0.1:${port} --tls ${tls_domain} --password ${password}
 StandardOutput=append:/var/log/shadowtls-${identifier}.log
 StandardError=append:/var/log/shadowtls-${identifier}.log
 SyslogIdentifier=${identifier}
@@ -493,7 +520,10 @@ EOF
 # 安装 ShadowTLS
 install_shadowtls() {
     echo -e "${CYAN}正在安装 ShadowTLS...${RESET}"
-    
+
+    # 安装依赖（jq/wget/curl 为后续步骤所必需）
+    install_requirements
+
     # 检测已安装的协议
     local has_ss=false
     local has_snell=false
@@ -725,7 +755,7 @@ install_shadowtls() {
             if [ ! -z "$port" ]; then
                 local service_file="${SYSTEMD_DIR}/shadowtls-snell-${port}.service"
                 if [ -f "$service_file" ]; then
-                    local stls_port=$(grep -oP '(?<=--listen ::0:)\d+' "$service_file")
+                    local stls_port=$(get_stls_listen_port "$service_file")
                     generate_snell_links "${server_ip}" "${stls_port}" "${psk}" "${password}" "${tls_domain}" "${port}"
                 fi
             fi
@@ -785,7 +815,7 @@ view_config() {
     # 检查 SS 是否安装并获取配置
     if [ -f "$ss_service" ] && check_ssrust; then
         echo -e "\n${YELLOW}=== Shadowsocks + ShadowTLS 配置 ===${RESET}"
-        local ss_listen_port=$(grep -oP '(?<=--listen ::0:)\d+' "$ss_service")
+        local ss_listen_port=$(get_stls_listen_port "$ss_service")
         local tls_domain=$(grep -oP '(?<=--tls )[^ ]+' "$ss_service")
         local password=$(grep -oP '(?<=--password )[^ ]+' "$ss_service")
         local ss_port=$(get_ssrust_port)
@@ -817,7 +847,7 @@ view_config() {
                     local service_file="${SYSTEMD_DIR}/shadowtls-snell-${port}.service"
                     if [ -f "$service_file" ]; then
                         local exec_line=$(grep "ExecStart=" "$service_file")
-                        local stls_port=$(echo "$exec_line" | grep -oP '(?<=--listen ::0:)\d+')
+                        local stls_port=$(get_stls_listen_port "$service_file")
                         local stls_password=$(echo "$exec_line" | grep -oP '(?<=--password )[^ ]+')
                         local stls_domain=$(echo "$exec_line" | grep -oP '(?<=--tls )[^ ]+')
                         

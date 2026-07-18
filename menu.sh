@@ -1,7 +1,7 @@
 #!/bin/bash
 # =========================================
 # 作者: jinqians
-# 日期: 2025年2月
+# 日期: 2026年7月
 # 网站：jinqians.com
 # 描述: 这个脚本用于统一管理 Snell、SS-Rust 和 ShadowTLS（将逐步和snell管理菜单分开）
 # =========================================
@@ -14,7 +14,7 @@ CYAN='\033[0;36m'
 RESET='\033[0m'
 
 # 当前版本号
-current_version="3.2"
+current_version="3.3"
 
 # 中国大陆屏蔽脚本仓库地址
 MAINLAND_BLOCK_URL="https://raw.githubusercontent.com/jinqians/ss-2022.sh/refs/heads/main/block-mainland.sh"
@@ -145,7 +145,7 @@ check_and_show_status() {
         if [ -d "/etc/snell/users" ]; then
             for user_conf in "/etc/snell/users"/*; do
                 if [ -f "$user_conf" ] && [[ "$user_conf" != *"snell-main.conf" ]]; then
-                    local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*::0:\([0-9]*\)/\1/p')
+                    local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*:\([0-9][0-9]*\)[[:space:]]*$/\1/p')
                     if [ ! -z "$port" ]; then
                         user_count=$((user_count + 1))
                         if systemctl is-active --quiet "snell-${port}"; then
@@ -338,7 +338,7 @@ uninstall_snell() {
     if [ -d "/etc/snell/users" ]; then
         for user_conf in "/etc/snell/users"/*; do
             if [ -f "$user_conf" ]; then
-                local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*::0:\([0-9]*\)/\1/p')
+                local port=$(grep -E '^listen' "$user_conf" | sed -n 's/.*:\([0-9][0-9]*\)[[:space:]]*$/\1/p')
                 if [ ! -z "$port" ]; then
                     echo -e "${YELLOW}正在停止用户服务 (端口: $port)${RESET}"
                     systemctl stop "snell-${port}" 2>/dev/null
