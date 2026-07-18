@@ -9,7 +9,7 @@ set -e
 # =========================================
 
 # 版本信息
-SCRIPT_VERSION="1.8"
+SCRIPT_VERSION="1.9"
 SS_VERSION=""
 
 # 系统路径
@@ -604,13 +604,48 @@ required_key_length() {
     esac
 }
 
-# 获取 ss-rust 监听地址：无 IPv6 协议栈的机器监听 0.0.0.0，避免绑定 :: 失败
+# 获取 ss-rust 监听地址
+# - 无 IPv6 协议栈的机器监听 0.0.0.0，避免绑定 :: 失败
+# - 启用 obfs 插件时，shadowsocks-rust 存在已知 bug（server=:: 时只监听 IPv6、丢失 IPv4，
+#   参见 shadowsocks-rust issue #694），故有 IPv4 时强制监听 0.0.0.0 以保证 IPv4 客户端可连
 get_ss_listen_addr() {
-    if [[ -f /proc/net/if_inet6 ]]; then
+    local has_ipv4=1 has_ipv6=0
+    [[ -f /proc/net/if_inet6 ]] && has_ipv6=1
+    if command -v ip >/dev/null 2>&1; then
+        ip -4 addr show scope global 2>/dev/null | grep -q "inet " || has_ipv4=0
+    fi
+
+    # 纯 IPv6 机器：只能监听 ::
+    if [[ ${has_ipv4} -eq 0 && ${has_ipv6} -eq 1 ]]; then
+        echo "::"
+        return
+    fi
+
+    # 启用 obfs 插件且有 IPv4：强制 0.0.0.0，规避 ss-rust 双栈+obfs 只监听 IPv6 的 bug
+    if [[ -n "${SS_PLUGIN}" ]]; then
+        echo "0.0.0.0"
+        return
+    fi
+
+    # 无插件：有 IPv6 则双栈监听
+    if [[ ${has_ipv6} -eq 1 ]]; then
         echo "::"
     else
         echo "0.0.0.0"
     fi
+}
+
+# SIP002 分享链接的默认 obfs 伪装域名（http 模式的 Host 头 / tls 模式的 SNI）
+OBFS_HOST="www.bing.com"
+
+# 生成 SIP002 分享链接的 obfs 插件参数段（无插件时为空）
+build_plugin_param() {
+    local plugin=$1 plugin_opts=$2
+    [[ -z "${plugin}" ]] && return 0
+    local mode="${plugin_opts#obfs=}"
+    mode="${mode%%;*}"
+    # 客户端插件名为 obfs-local；分号/等号需 URL 编码
+    echo "/?plugin=obfs-local%3Bobfs%3D${mode}%3Bobfs-host%3D${OBFS_HOST}"
 }
 
 # 设置端口
@@ -1198,8 +1233,7 @@ View() {
     if [[ -n "${config_plugin}" ]]; then
         obfs_mode="${config_plugin_opts#obfs=}"
         obfs_mode="${obfs_mode%%;*}"
-        # 客户端插件名为 obfs-local；分号/等号需 URL 编码
-        plugin_param="/?plugin=obfs-local%3Bobfs%3D${obfs_mode}"
+        plugin_param=$(build_plugin_param "${config_plugin}" "${config_plugin_opts}")
     fi
 
     if [[ "${ipv4}" != "IPv4_Error" ]]; then
@@ -1229,7 +1263,7 @@ View() {
 
     echo -e "\n${Yellow_font_prefix}=== Surge 配置 ===${Font_color_suffix}"
     local surge_obfs=""
-    [[ -n "${obfs_mode}" ]] && surge_obfs=", obfs=${obfs_mode}"
+    [[ -n "${obfs_mode}" ]] && surge_obfs=", obfs=${obfs_mode}, obfs-host=${OBFS_HOST}"
     if [[ "${ipv4}" != "IPv4_Error" ]]; then
         echo -e "SS-${ipv4} = ss, ${ipv4}, ${config_port}, encrypt-method=${config_method}, password=${config_password}, tfo=${config_tfo}, udp-relay=true${surge_obfs}"
     fi
@@ -1597,7 +1631,8 @@ EOF
     getipv4
     if [[ "${ipv4}" != "IPv4_Error" ]]; then
         local node_userinfo=$(echo -n "${SS_METHOD}:${new_password}" | base64 -w 0)
-        echo -e " 链接：${Green_font_prefix}ss://${node_userinfo}@${ipv4}:${new_port}#SS-${ipv4}-${new_port}${Font_color_suffix}"
+        local node_plugin_param=$(build_plugin_param "${SS_PLUGIN}" "${SS_PLUGIN_OPTS}")
+        echo -e " 链接：${Green_font_prefix}ss://${node_userinfo}@${ipv4}:${new_port}${node_plugin_param}#SS-${ipv4}-${new_port}${Font_color_suffix}"
     fi
 }
 
@@ -1621,10 +1656,13 @@ list_extra_ports() {
         else
             node_status="${Red_font_prefix}未运行${Font_color_suffix}"
         fi
+        local node_plugin=$(jq -r '.plugin // empty' "$f")
+        local node_plugin_opts=$(jq -r '.plugin_opts // empty' "$f")
         echo -e "${Green_font_prefix}[额外节点]${Font_color_suffix} 端口：${port}  加密：${method}  密码：${password}  状态：${node_status}"
         if [[ "${ipv4}" != "IPv4_Error" ]]; then
             local node_userinfo=$(echo -n "${method}:${password}" | base64 -w 0)
-            echo -e "    链接：ss://${node_userinfo}@${ipv4}:${port}#SS-${ipv4}-${port}"
+            local node_plugin_param=$(build_plugin_param "${node_plugin}" "${node_plugin_opts}")
+            echo -e "    链接：ss://${node_userinfo}@${ipv4}:${port}${node_plugin_param}#SS-${ipv4}-${port}"
         fi
     done
 

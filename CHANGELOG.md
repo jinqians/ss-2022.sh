@@ -1,5 +1,13 @@
 # 更新日志
 
+## v3.4（2026-07-18）
+
+### 修复：开启 obfs 混淆后节点连接失败
+- 根因是 shadowsocks-rust 已知 bug（[issue #694](https://github.com/shadowsocks/shadowsocks-rust/issues/694)）：配置 `server` 为 `::`（双栈）且启用 obfs 插件时，ss-rust 只监听 IPv6、完全不监听 IPv4，导致 IPv4 客户端全部连不上。
+- `get_ss_listen_addr()`：启用 obfs 插件且机器有 IPv4 时，监听地址强制用 `0.0.0.0`，规避该 bug（纯 IPv6 机器仍用 `::`）。
+- 分享链接补上 `obfs-host`（http 模式的 Host 头 / tls 模式的 SNI），提升客户端兼容性；Surge 配置同步输出 `obfs-host`。
+- 抽出 `build_plugin_param()` 统一生成插件参数，修复多端口额外节点的分享链接此前不带 obfs 参数的问题。
+
 ## v3.3（2026-07-18）
 
 ss-2022.sh 1.7 → 1.8，menu.sh 3.2 → 3.3
