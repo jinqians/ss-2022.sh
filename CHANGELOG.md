@@ -1,0 +1,46 @@
+# 更新日志
+
+## v3.3（2026-07-18）
+
+ss-2022.sh 1.7 → 1.8，menu.sh 3.2 → 3.3
+
+### #13 ShadowTLS 默认监听 IPv6 导致不通
+- `shadowtls.sh`：新增 `get_listen_address()`，机器有 IPv4 地址时监听 `0.0.0.0`（此前硬编码 `::0`，在某些IDC环境不接受 IPv4 连接），纯 IPv6 机器仍监听 `::0`。
+- `shadowtls.sh` / `ss-2022.sh`：所有从 service 文件解析 ShadowTLS 端口的地方改为兼容任意监听地址（`::0` / `0.0.0.0` / 手动修改过的地址），解决"自行修改 service 文件后提示配置文件不完整或已损坏"的问题。
+- `shadowtls.sh` / `menu.sh`：snell 配置 `listen` 行解析同样改为容错格式。
+- 注意：双栈机器现在默认只监听 IPv4；如需 IPv6 入口，手动把 service 中 `--listen` 改为 `[::]:端口` 即可，脚本能正常解析。
+
+### #12 创建多个 ss 节点
+- `ss-2022.sh` 主菜单新增「11. 多端口管理」：新增/查看/删除端口节点。
+- 每个额外端口使用独立配置（`/etc/ss-rust/ports/<端口>.json`）和独立 systemd 服务（`ss-rust-<端口>`），互不影响；沿用主配置的加密方式/TFO/DNS/插件，密码独立。
+- 卸载 Shadowsocks Rust 时自动清理所有额外节点服务。
+
+### #11 ss 增加 obfs 配置
+- `ss-2022.sh` 安装流程和「修改配置」菜单新增混淆插件选项：simple-obfs（http/tls）。
+- Debian/Ubuntu 自动 `apt install simple-obfs`；RHEL 系官方源无此包，会提示自行编译并自动跳过。
+- 查看配置时输出带 `plugin` 参数的 SIP002 分享链接及 Surge `obfs=` 参数。
+
+### #10 AlmaLinux 安装问题
+- `detect_os()` 改为优先读取 `/etc/os-release`，识别 AlmaLinux/Rocky/RHEL/Fedora/Anolis 等（含 `ID_LIKE` 兜底）。
+- RHEL 系使用 `dnf`（无则 `yum`）安装依赖，自动启用 EPEL（qrencode 需要）。
+- 防火墙支持 firewalld（RHEL 系默认）；firewalld 激活时跳过 iptables 直改，避免规则冲突。
+- `service iptables save` 失败不再中断脚本（RHEL 系默认无 iptables-services）。
+- `shadowtls.sh` 依赖安装同样兼容 dnf/yum，并修复了 `install_requirements` 从未被调用的问题。
+
+### #1 安装后显示未安装 / 自定义密码启动失败
+- 密码校验覆盖全部 2022-blake3 系列：`aes-128-gcm` 要求 16 字节、其余要求 32 字节的 Base64 密钥（此前 128-gcm 无校验，手动输入短密码会导致服务启动失败）。
+- 不合规时循环重新输入（原实现为递归），并提示可回车自动生成。
+- （时区 `cp` 报错导致安装中断的问题此前版本已修复。）
+
+### #4 service 文件加入环境变量
+- v3.2 已包含 `Environment=MONOIO_FORCE_LEGACY_DRIVER=1`（shadowtls.sh service 模板），本次仅确认。
+
+### 新增：强制时间同步
+- SS2022（2022-blake3 系列）协议校验时间戳，服务器与客户端时间误差超过 30 秒无法连接；此前脚本只设置时区、不同步时钟。
+- 新增 `ensure_time_sync()`（安装依赖时自动执行）：已有 NTP 服务在运行则跳过 → 优先启用 systemd-timesyncd → 回退安装 chrony（自动适配 Debian/RHEL 服务名差异）；全部失败时明确警告用户手动配置。
+
+### 其他修复
+- `write_config` 原写法在启用自定义 DNS 时会生成非法 JSON，改用 `jq` 生成（同时保证特殊字符转义正确）。
+- 「修改全部配置」原先密码在加密方式之前设置，导致按旧加密方式校验密码，已调整顺序。
+- `${Success}` 变量未定义导致安装成功提示缺少前缀，已补充定义。
+- ss-rust 主配置监听地址：无 IPv6 协议栈的机器自动用 `0.0.0.0` 代替 `::`。

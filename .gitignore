@@ -1,0 +1,4 @@
+.DS_Store
+.backup-before-fix/
+CHANGES-local.md
+*.bak.*
