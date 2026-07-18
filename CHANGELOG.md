@@ -1,5 +1,17 @@
 # 更新日志
 
+## v4.3（2026-07-18）
+
+menu.sh 3.4 → 4.3：与 snell 项目的 menu.sh（v4.2）合并功能，两个仓库统一为同一份文件、同一版本号。
+
+### menu.sh 合并回 snell 项目 menu.sh（v4.2）中被删减的功能
+- 新增 `close_port()` / `close_nftables_port()` / `save_nftables_rules()`：卸载时自动清理 ufw / iptables / nftables 中放行的端口规则。
+- `uninstall_snell()` 补全：卸载前先停止并删除依赖 Snell 后端的 `shadowtls-snell-*` 服务；清理 `snell.socket`、`snell-netns` 服务及 `snell-netns-setup.sh`；各端口同步关闭防火墙；无其余 ShadowTLS 服务时顺带删除 `shadow-tls` 二进制。修复原实现中 `${service_name}` 未定义导致主服务文件删不掉的问题。
+- `uninstall_shadowtls()` 补全：从 service 文件解析 `--listen` 端口并关闭防火墙。
+- `uninstall_ss_rust()` 增强（menu.sh 独有）：清理 v3.3 引入的多端口节点服务（`ss-rust-<端口>`），并关闭主端口及各多端口的防火墙规则。
+- 定义 `SYSTEMD_DIR=/etc/systemd/system`（此前被引用但从未定义）。
+- 保留 ss-2022 版独有功能：中国大陆屏蔽管理（选项 10）、VLESS Reality 由 PSM 提供。
+
 ## v3.4（2026-07-18）
 
 ### 修复：开启 obfs 混淆后节点连接失败
