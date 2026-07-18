@@ -321,10 +321,13 @@ manage_shadowtls() {
     bash <(curl -sL https://raw.githubusercontent.com/jinqians/snell.sh/main/shadowtls.sh)
 }
 
-# 安装/管理 VLESS Reality
+# 安装/管理 VLESS Reality（已整合到 PSM）
 manage_vless() {
-    # 从你的仓库拉取并执行 vless 管理脚本
-    bash <(curl -sL https://raw.githubusercontent.com/jinqians/vless/refs/heads/main/vless.sh)
+    echo -e "${CYAN}VLESS Reality 的安装管理已由 PSM（Proxy Stack Manager）提供，正在启动 PSM...${RESET}"
+    if ! bash <(curl -fsSL https://psm.jinqians.com); then
+        echo -e "${RED}PSM 启动失败，请检查网络后重试，或手动执行：bash <(curl -fsSL https://psm.jinqians.com)${RESET}"
+        return 1
+    fi
 }
 # 卸载 Snell
 uninstall_snell() {
